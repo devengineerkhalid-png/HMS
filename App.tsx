@@ -18,13 +18,13 @@ const App: React.FC = () => {
   const [user, setUser] = useState<{ role: UserRole; name: string; id?: string } | null>(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [isInitializing, setIsInitializing] = useState(true);
-  const [dbStatus, setDbStatus] = useState<'CONNECTING' | 'CONNECTED' | 'ERROR'>('CONNECTING');
+  const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
     const initializeApp = async () => {
       try {
         await dataStore.init();
-        setDbStatus('CONNECTED');
+        setIsOffline(dataStore.isOffline());
         
         const savedUser = localStorage.getItem('pesh_hms_user');
         if (savedUser) {
@@ -34,7 +34,7 @@ const App: React.FC = () => {
         }
       } catch (e) {
         console.error("App initialization failed:", e);
-        setDbStatus('ERROR');
+        setIsOffline(true);
       } finally {
         setIsInitializing(false);
       }
@@ -122,9 +122,9 @@ const App: React.FC = () => {
                  <span className="bg-emerald-100 text-emerald-700 text-[10px] px-3 py-1 rounded-full font-black border border-emerald-200 uppercase tracking-widest">
                   Active Session
                  </span>
-                 <div className={`flex items-center gap-2 px-3 py-1 rounded-full border text-[9px] font-black uppercase tracking-tighter ${dbStatus === 'CONNECTED' ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-red-50 border-red-100 text-red-600'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${dbStatus === 'CONNECTED' ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
-                    Turso {dbStatus}
+                 <div className={`flex items-center gap-2 px-3 py-1 rounded-full border text-[9px] font-black uppercase tracking-tighter ${!isOffline ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-amber-50 border-amber-100 text-amber-600'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${!isOffline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                    {isOffline ? 'LOCAL STORAGE' : 'TURSO CLOUD'}
                  </div>
               </div>
             </div>

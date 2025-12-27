@@ -15,15 +15,11 @@ const SettingsView: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [staff, setStaff] = useState<any[]>([]);
-  const [blobCount, setBlobCount] = useState(0);
 
   useEffect(() => {
     const loadStaff = async () => {
       const allUsers = await dataStore.getUsers();
       setStaff(allUsers.filter((u: any) => u.role !== UserRole.RESIDENT));
-      
-      const blobRes = await dataStore.execute("SELECT COUNT(*) as count FROM blobs");
-      setBlobCount(Number(blobRes.rows[0].count));
     };
     loadStaff();
   }, []);
@@ -44,7 +40,7 @@ const SettingsView: React.FC = () => {
       const reader = new FileReader();
       reader.onload = async (event) => {
         const content = event.target?.result as string;
-        if (window.confirm("This will overwrite ALL current data. Proceed?")) {
+        if (window.confirm("This will overwrite ALL current records. Images stored in Cloud remain unaffected. Proceed?")) {
           await dataStore.importAllData(content);
           window.location.reload();
         }
@@ -54,9 +50,8 @@ const SettingsView: React.FC = () => {
   };
 
   const handleWipe = async () => {
-    if (window.confirm("DANGER: This will delete ALL residents, rooms, and blobs. Only admin remains. Continue?")) {
+    if (window.confirm("DANGER: This will delete ALL residents, rooms, and local records. Only admin remains. Continue?")) {
       await dataStore.wipeAllData();
-      await dataStore.execute("DELETE FROM blobs");
       window.location.reload();
     }
   };
@@ -73,7 +68,7 @@ const SettingsView: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-black text-slate-900 tracking-tight">System Configuration</h2>
-          <p className="text-sm text-slate-500 font-medium">Global control over infrastructure and edge storage.</p>
+          <p className="text-sm text-slate-500 font-medium">Global control over infrastructure and cloud storage.</p>
         </div>
         <div className="flex bg-white rounded-2xl p-1 shadow-sm border border-slate-100">
            <button onClick={() => setActiveTab('GENERAL')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'GENERAL' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}>Branch Info</button>
@@ -127,17 +122,17 @@ const SettingsView: React.FC = () => {
                 <section>
                    <div className="flex items-center gap-3 mb-6">
                       <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center"><i className="fa-solid fa-cloud-bolt"></i></div>
-                      <h3 className="text-lg font-black text-slate-900">Blob Maintenance</h3>
+                      <h3 className="text-lg font-black text-slate-900">Cloud Maintenance</h3>
                    </div>
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="p-8 bg-slate-50 rounded-[32px] border border-slate-100">
-                         <h4 className="font-black text-slate-900">Active Blobs</h4>
-                         <p className="text-3xl font-black text-emerald-600 mt-2">{blobCount}</p>
-                         <p className="text-xs text-slate-500 mt-1 font-medium italic">Stored as binary in Turso Edge.</p>
+                         <h4 className="font-black text-slate-900">Storage Engine</h4>
+                         <p className="text-2xl font-black text-emerald-600 mt-2">Vercel Blob</p>
+                         <p className="text-xs text-slate-500 mt-1 font-medium italic">High-performance edge binary storage.</p>
                       </div>
                       <button onClick={handleWipe} className="p-8 bg-red-900 rounded-[32px] border border-red-950 text-left group hover:bg-black transition-all">
-                         <h4 className="font-black text-white">Prune Orphan Blobs</h4>
-                         <p className="text-xs text-red-100/40 mt-1 font-medium">Remove unreferenced files from storage.</p>
+                         <h4 className="font-black text-white">Full Database Wipe</h4>
+                         <p className="text-xs text-red-100/40 mt-1 font-medium">Remove all residents and financials from Turso.</p>
                       </button>
                    </div>
                 </section>
@@ -145,17 +140,17 @@ const SettingsView: React.FC = () => {
                 <section>
                    <div className="flex items-center gap-3 mb-6">
                       <div className="w-10 h-10 rounded-xl bg-slate-50 text-slate-600 flex items-center justify-center"><i className="fa-solid fa-database"></i></div>
-                      <h3 className="text-lg font-black text-slate-900">JSON Exchange</h3>
+                      <h3 className="text-lg font-black text-slate-900">Data Portability</h3>
                    </div>
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <button onClick={handleExport} className="p-8 bg-slate-50 rounded-[32px] border border-slate-100 text-left group hover:bg-slate-900 transition-all">
                          <i className="fa-solid fa-download text-blue-500 mb-4 text-2xl group-hover:text-white transition-colors"></i>
-                         <h4 className="font-black text-slate-900 group-hover:text-white transition-colors">Export Text Data</h4>
-                         <p className="text-xs text-slate-500 group-hover:text-slate-400 transition-colors mt-1 font-medium">Download records (excluding blobs).</p>
+                         <h4 className="font-black text-slate-900 group-hover:text-white transition-colors">Export Ledger</h4>
+                         <p className="text-xs text-slate-500 group-hover:text-slate-400 transition-colors mt-1 font-medium">Download JSON of all text records.</p>
                       </button>
                       <button onClick={() => fileInputRef.current?.click()} className="p-8 bg-slate-50 rounded-[32px] border border-slate-100 text-left group hover:bg-slate-900 transition-all">
                          <i className="fa-solid fa-upload text-emerald-500 mb-4 text-2xl group-hover:text-white transition-colors"></i>
-                         <h4 className="font-black text-slate-900 group-hover:text-white transition-colors">Import Records</h4>
+                         <h4 className="font-black text-slate-900 group-hover:text-white transition-colors">Import Backup</h4>
                          <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleImport} />
                       </button>
                    </div>
@@ -169,16 +164,16 @@ const SettingsView: React.FC = () => {
              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-125 transition-transform duration-700"><i className="fa-solid fa-server text-9xl"></i></div>
              <h3 className="font-black text-sm mb-6 uppercase tracking-widest flex items-center gap-3">
                 <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                Storage Integrity
+                Storage Architecture
              </h3>
              <div className="space-y-4 relative z-10">
                 <div className="p-4 bg-white/5 border border-white/10 rounded-2xl">
-                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">SQLite File Engine</p>
-                   <p className="text-xl font-black">libSQL v3.4</p>
+                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Database Layer</p>
+                   <p className="text-xl font-black">Turso SQLite</p>
                 </div>
                 <div className="p-4 bg-white/5 border border-white/10 rounded-2xl">
                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Blob Fetch Protocol</p>
-                   <p className="text-xl font-black">Direct Edge Sync</p>
+                   <p className="text-xl font-black">Vercel Edge</p>
                 </div>
              </div>
           </div>
