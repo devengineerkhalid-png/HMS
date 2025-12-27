@@ -54,14 +54,6 @@ export interface BillingRecord {
   paymentMethod?: 'CASH' | 'EASYPAISA' | 'JAZZCASH' | 'BANK_TRANSFER';
 }
 
-export interface Expense {
-  id: string;
-  title: string;
-  amount: number;
-  category: 'ELECTRICITY' | 'GAS' | 'WATER' | 'STAFF' | 'FUEL' | 'OTHER';
-  date: string;
-}
-
 export interface Complaint {
   id: string;
   residentId: string;
@@ -69,7 +61,6 @@ export interface Complaint {
   category: 'PLUMBING' | 'ELECTRICAL' | 'INTERNET' | 'CLEANING' | 'OTHER';
   status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED';
   createdAt: string;
-  assignedTo?: string;
 }
 
 export interface GatePass {
@@ -82,6 +73,15 @@ export interface GatePass {
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
 }
 
+export interface UserAccount {
+  identifier: string;
+  password: string;
+  role: UserRole;
+  name: string;
+  id: string;
+}
+
+// Added VisitorRecord interface to support MOCK_VISITORS in constants.tsx
 export interface VisitorRecord {
   id: string;
   name: string;
@@ -89,9 +89,18 @@ export interface VisitorRecord {
   residentId: string;
   purpose: string;
   checkInTime: string;
-  checkOutTime?: string;
 }
 
+// Added Expense interface to support MOCK_EXPENSES in constants.tsx
+export interface Expense {
+  id: string;
+  title: string;
+  amount: number;
+  category: 'ELECTRICITY' | 'WATER' | 'FUEL' | 'MAINTENANCE' | 'OTHER' | string;
+  date: string;
+}
+
+// Added InventoryItem interface to support MOCK_INVENTORY in constants.tsx
 export interface InventoryItem {
   id: string;
   name: string;
@@ -100,6 +109,7 @@ export interface InventoryItem {
   lastUpdated: string;
 }
 
+// Added MealPlan interface to support MOCK_MEAL_PLAN in constants.tsx
 export interface MealPlan {
   day: string;
   breakfast: string;

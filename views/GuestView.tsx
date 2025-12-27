@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserRole, ResidentType } from '../types';
 import { dataStore } from '../services/dataStore';
 
@@ -8,146 +8,93 @@ interface GuestViewProps {
 }
 
 const GuestView: React.FC<GuestViewProps> = ({ onLogin }) => {
-  const [mode, setMode] = useState<'LOGIN' | 'SIGNUP' | 'APPLY'>('LOGIN');
+  const [mode, setMode] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isCloud, setIsCloud] = useState(false);
 
   const [loginData, setLoginData] = useState({ identifier: '', password: '' });
-  const [signupData, setSignupData] = useState({
-    name: '',
-    cnic: '',
-    password: '',
-    phone: '',
-    type: ResidentType.STUDENT,
-    institution: ''
-  });
 
-  const handleLogin = (e: React.FormEvent) => {
+  useEffect(() => {
+    setIsCloud(!dataStore.isOffline());
+  }, []);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
 
-    // Correctly handle async user retrieval
-    setTimeout(async () => {
-      try {
-        const users = await dataStore.getUsers();
-        const user = users.find((u: any) => u.identifier === loginData.identifier && u.password === loginData.password);
+    try {
+      const users = await dataStore.getUsers();
+      const user = users.find((u: any) => u.identifier === loginData.identifier && u.password === loginData.password);
 
-        if (user) {
-          localStorage.setItem('pesh_hms_user', JSON.stringify(user));
-          onLogin(user);
-        } else {
-          setError('Authentication Failed: Invalid ID or Keyphrase.');
-        }
-      } catch (err) {
-        setError('Database Error: Unable to authenticate.');
-      } finally {
-        setIsLoading(false);
+      if (user) {
+        localStorage.setItem('pesh_hms_user', JSON.stringify(user));
+        onLogin(user);
+      } else {
+        setError('Verification Failed: Incorrect CNIC or Keyphrase.');
       }
-    }, 1000);
-  };
-
-  const handleSignup = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!signupData.name || !signupData.cnic || !signupData.password) {
-      setError('Regulatory compliance requires all fields.');
-      return;
+    } catch (err) {
+      setError('System Busy: Unable to reach verification server.');
+    } finally {
+      setIsLoading(false);
     }
-    
-    // Register the user in the "Auth Database"
-    const newUser = {
-      identifier: signupData.cnic,
-      password: signupData.password,
-      role: UserRole.RESIDENT,
-      name: signupData.name,
-      id: `res_${Date.now()}`
-    };
-    
-    dataStore.addUser(newUser);
-    
-    // Auto-login after signup
-    localStorage.setItem('pesh_hms_user', JSON.stringify(newUser));
-    onLogin(newUser);
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 md:p-8">
-      <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 bg-white rounded-[48px] shadow-2xl overflow-hidden">
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 bg-white rounded-[60px] shadow-2xl overflow-hidden min-h-[700px]">
         
-        {/* Branding Sidebar */}
-        <div className="hidden lg:flex flex-col justify-between p-16 bg-slate-900 text-white relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+        <div className="hidden lg:flex flex-col justify-between p-20 bg-slate-900 text-white relative">
+          <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
           <div>
-            <div className="flex items-center gap-3 mb-16">
-              <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-slate-900 text-xl font-black shadow-lg shadow-emerald-500/20">P</div>
-              <span className="text-2xl font-black tracking-tighter">Frontier HMS</span>
+            <div className="flex items-center gap-4 mb-16">
+              <div className="w-10 h-10 bg-emerald-500 rounded-2xl flex items-center justify-center text-slate-900 font-black">P</div>
+              <span className="font-black text-xl tracking-tighter">Frontier HMS</span>
             </div>
-            <h1 className="text-6xl font-black mb-8 leading-[0.95] tracking-tight">
-              Frontier <br/> <span className="text-emerald-400">Smart Living.</span>
+            <h1 className="text-6xl font-black mb-8 leading-[0.9] tracking-tighter">
+              Manage. <br/> <span className="text-emerald-400">Sync.</span> <br/> Secure.
             </h1>
-            <p className="text-slate-400 text-lg max-w-sm leading-relaxed font-medium">Standardized hostel management for Hayatabad & Peshawar's top academic districts.</p>
+            <p className="text-slate-400 font-medium leading-relaxed max-w-xs">Digital hub for Peshawar's premier hostels. Smart synchronization between Warden and Resident.</p>
           </div>
-          <div className="flex items-center gap-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">
-            <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center border border-slate-700">
-                <i className="fa-solid fa-shield-check text-emerald-500"></i>
-            </div>
-            Police Verified v3.1 PRO
+          <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl self-start border text-[10px] font-black uppercase tracking-widest ${isCloud ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-amber-500/10 border-amber-500/20 text-amber-400'}`}>
+            <span className={`w-2 h-2 rounded-full ${isCloud ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+            {isCloud ? 'Cloud Sync Active' : 'Local Node Active'}
           </div>
         </div>
 
-        {/* Auth Forms */}
-        <div className="p-8 md:p-24 flex flex-col justify-center bg-white">
-          {mode === 'LOGIN' ? (
-            <div className="space-y-8 animate-in slide-in-from-right-4">
-              <div className="text-center lg:text-left">
-                <h2 className="text-4xl font-black text-slate-900 mb-3 tracking-tighter">Assalam-o-Alaikum</h2>
-                <p className="text-slate-500 font-medium italic">Enter credentials to access the HMS Hub.</p>
-              </div>
+        <div className="p-12 md:p-24 flex flex-col justify-center">
+          <div className="mb-10 text-center lg:text-left">
+            <h2 className="text-4xl font-black text-slate-900 tracking-tighter mb-2">Peshawar Gateway</h2>
+            <p className="text-slate-500 font-medium italic">Authenticate to enter your digital quarter.</p>
+          </div>
 
-              {error && (
-                <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-[10px] font-black uppercase tracking-widest flex items-center gap-3">
-                  <i className="fa-solid fa-triangle-exclamation"></i> {error}
-                </div>
-              )}
-
-              <form onSubmit={handleLogin} className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">CNIC or Admin ID</label>
-                  <input required placeholder="e.g. admin or 17301-XXXXXXX-X" className="w-full bg-slate-50 border-2 border-slate-50 p-5 rounded-[28px] outline-none focus:border-emerald-500 text-sm font-black" value={loginData.identifier} onChange={e => setLoginData({...loginData, identifier: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Secure Keyphrase</label>
-                  <input required type="password" placeholder="••••••••" className="w-full bg-slate-50 border-2 border-slate-50 p-5 rounded-[28px] outline-none focus:border-emerald-500 text-sm font-black tracking-widest" value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} />
-                </div>
-                <button disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-[28px] font-black uppercase text-xs tracking-[0.2em] shadow-2xl shadow-slate-300 hover:bg-slate-800 transition-all flex items-center justify-center gap-3">
-                  {isLoading ? <i className="fa-solid fa-spinner fa-spin"></i> : 'Authenticate Access'}
-                </button>
-              </form>
-              
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Default Admin Credentials</p>
-                <code className="text-[10px] font-bold text-slate-600">ID: admin | PW: admin123</code>
-              </div>
-
-              <p className="text-center text-xs font-black text-slate-400 uppercase tracking-widest">
-                New student? <button onClick={() => setMode('SIGNUP')} className="text-emerald-600 font-black hover:underline ml-2">Register Admissions</button>
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-8 animate-in slide-in-from-right-4">
-              <button onClick={() => setMode('LOGIN')} className="text-slate-400 font-black text-[10px] uppercase tracking-widest mb-4 hover:text-slate-900">
-                <i className="fa-solid fa-arrow-left mr-2"></i> Return to Login
-              </button>
-              <h2 className="text-4xl font-black text-slate-900 tracking-tighter">Hostel Enrollment</h2>
-              <form onSubmit={handleSignup} className="space-y-4">
-                <input required placeholder="Legal Full Name" className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold border" value={signupData.name} onChange={e => setSignupData({...signupData, name: e.target.value})} />
-                <input required placeholder="CNIC (User Identity)" className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold border" value={signupData.cnic} onChange={e => setSignupData({...signupData, cnic: e.target.value})} />
-                <input required type="password" placeholder="Set Secure Password" className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold border" value={signupData.password} onChange={e => setSignupData({...signupData, password: e.target.value})} />
-                <input required placeholder="Phone Contact" className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold border" value={signupData.phone} onChange={e => setSignupData({...signupData, phone: e.target.value})} />
-                <button className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-emerald-100 mt-4">Complete Registration</button>
-              </form>
+          {error && (
+            <div className="mb-8 p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-[10px] font-black uppercase flex items-center gap-3">
+              <i className="fa-solid fa-triangle-exclamation"></i> {error}
             </div>
           )}
+
+          <form onSubmit={handleLogin} className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">CNIC or Admin ID</label>
+              <input required placeholder="17301-XXXXXXX-X" className="w-full bg-slate-50 border-2 border-slate-50 p-5 rounded-3xl outline-none focus:border-emerald-500 text-sm font-black transition-all" value={loginData.identifier} onChange={e => setLoginData({...loginData, identifier: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Keyphrase (Phone No.)</label>
+              <input required type="password" placeholder="••••••••" className="w-full bg-slate-50 border-2 border-slate-50 p-5 rounded-3xl outline-none focus:border-emerald-500 text-sm font-black transition-all" value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} />
+            </div>
+            <button disabled={isLoading} className="w-full bg-slate-900 text-white py-6 rounded-[32px] font-black uppercase text-xs tracking-[0.2em] shadow-2xl shadow-slate-200 hover:bg-slate-800 transition-all flex items-center justify-center gap-3">
+              {isLoading ? <i className="fa-solid fa-spinner fa-spin"></i> : 'Verify Credentials'}
+            </button>
+          </form>
+
+          <div className="mt-12 p-6 bg-slate-50 rounded-[32px] border border-slate-100">
+             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Notice for Students</p>
+             <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                Logins are created by the Hostel Warden during admission. Please use your CNIC and the mobile number provided at the time of entry.
+             </p>
+          </div>
         </div>
       </div>
     </div>

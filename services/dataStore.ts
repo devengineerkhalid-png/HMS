@@ -1,7 +1,7 @@
 
 import { createClient, Client } from '@libsql/client';
 import { put } from '@vercel/blob';
-import { Resident, BillingRecord, Room, Complaint, GatePass, Expense, InventoryItem } from '../types';
+import { Resident, BillingRecord, Room, Complaint, GatePass, UserRole, UserAccount } from '../types';
 import { MOCK_RESIDENTS, MOCK_BILLING, MOCK_COMPLAINTS } from '../constants';
 
 const TURSO_URL = (process.env as any).TURSO_URL;
@@ -11,23 +11,16 @@ const BLOB_TOKEN = (process.env as any).BLOB_READ_WRITE_TOKEN;
 let client: Client | null = null;
 let isOfflineMode = false;
 
-// Helper: Check if Turso is properly configured
 const isTursoConfigured = () => {
-  return TURSO_URL && 
-         TURSO_URL !== "" && 
-         TURSO_URL !== "libsql://your-db-name.turso.io";
+  return TURSO_URL && TURSO_URL !== "" && TURSO_URL !== "libsql://your-db-name.turso.io";
 };
 
 if (isTursoConfigured()) {
-  client = createClient({
-    url: TURSO_URL,
-    authToken: TURSO_TOKEN || "",
-  });
-} else {
-  isOfflineMode = true;
-}
+  try {
+    client = createClient({ url: TURSO_URL, authToken: TURSO_TOKEN || "" });
+  } catch (e) { isOfflineMode = true; }
+} else { isOfflineMode = true; }
 
-// LocalStorage Keys
 const LS_KEYS = {
   RESIDENTS: 'pesh_hms_residents',
   ROOMS: 'pesh_hms_rooms',
@@ -37,7 +30,6 @@ const LS_KEYS = {
   USERS: 'pesh_hms_users'
 };
 
-// Helper: LocalStorage CRUD
 const ls = {
   get: <T>(key: string, defaultValue: T): T => {
     const data = localStorage.getItem(key);
@@ -48,16 +40,12 @@ const ls = {
   }
 };
 
-// Helper: Convert Base64 to Blob
 function base64ToBlob(base64: string): Blob {
   const parts = base64.split(';base64,');
   const contentType = parts[0].split(':')[1];
   const raw = window.atob(parts[1]);
-  const rawLength = raw.length;
-  const uInt8Array = new Uint8Array(rawLength);
-  for (let i = 0; i < rawLength; ++i) {
-    uInt8Array[i] = raw.charCodeAt(i);
-  }
+  const uInt8Array = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; ++i) uInt8Array[i] = raw.charCodeAt(i);
   return new Blob([uInt8Array], { type: contentType });
 }
 
@@ -66,8 +54,6 @@ export const dataStore = {
 
   init: async () => {
     if (isOfflineMode || !client) {
-      console.warn("HMS running in Local Storage mode (Turso not configured)");
-      // Ensure local defaults exist
       if (!localStorage.getItem(LS_KEYS.USERS)) {
         ls.set(LS_KEYS.USERS, [{ identifier: 'admin', password: 'admin123', role: 'SUPER_ADMIN', name: 'Super Admin', id: 'admin_001' }]);
       }
@@ -75,8 +61,8 @@ export const dataStore = {
     }
 
     try {
-      // Test connection with a simple query before running batch
-      await client.execute("SELECT 1");
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 2000));
+      await Promise.race([client.execute("SELECT 1"), timeoutPromise]);
       
       await client.batch([
         `CREATE TABLE IF NOT EXISTS residents (
@@ -115,25 +101,17 @@ export const dataStore = {
         });
       }
     } catch (e) {
-      console.error("Turso Connection Failed. Falling back to Local Storage.", e);
       isOfflineMode = true;
     }
   },
 
   uploadBlob: async (base64Data: string): Promise<string> => {
-    if (!BLOB_TOKEN || BLOB_TOKEN === "") {
-      console.warn("Vercel Blob token missing, using base64 directly");
-      return base64Data;
-    }
+    if (!BLOB_TOKEN || BLOB_TOKEN === "") return base64Data;
     try {
       const blob = base64ToBlob(base64Data);
-      const filename = `resident_${Date.now()}.png`;
-      const { url } = await put(filename, blob, { access: 'public', token: BLOB_TOKEN });
+      const { url } = await put(`res_${Date.now()}.png`, blob, { access: 'public', token: BLOB_TOKEN });
       return url;
-    } catch (e) {
-      console.error("Blob upload failed", e);
-      return base64Data;
-    }
+    } catch (e) { return base64Data; }
   },
 
   getResidents: async (): Promise<Resident[]> => {
@@ -142,29 +120,55 @@ export const dataStore = {
     return res.rows.map(row => ({ ...row, dues: Number(row.dues), profileImage: row.profileImageUrl } as unknown as Resident));
   },
 
-  addResident: async (res: Resident) => {
+  addResident: async (res: Resident, login?: { identifier: string, password: string }) => {
     let profileImageUrl = res.profileImage;
     if (res.profileImage && res.profileImage.startsWith('data:')) {
       profileImageUrl = await dataStore.uploadBlob(res.profileImage);
     }
 
     if (isOfflineMode || !client) {
-      const data = ls.get(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
-      ls.set(LS_KEYS.RESIDENTS, [{ ...res, profileImage: profileImageUrl }, ...data]);
+      const residents = ls.get<Resident[]>(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
+      ls.set(LS_KEYS.RESIDENTS, [{ ...res, profileImage: profileImageUrl }, ...residents]);
+      const users = ls.get<any[]>(LS_KEYS.USERS, []);
+      ls.set(LS_KEYS.USERS, [...users, { 
+        identifier: login?.identifier || res.cnic, 
+        password: login?.password || res.phone, 
+        role: UserRole.RESIDENT, 
+        name: res.name, 
+        id: res.id 
+      }]);
       return;
     }
 
+    await client.batch([
+      {
+        sql: `INSERT INTO residents (id, name, cnic, phone, email, parentName, parentPhone, type, 
+              institutionOrOffice, roomNumber, status, admissionDate, dues, profileImageUrl, 
+              permanentAddress, currentAddress, emergencyContactName, emergencyContactPhone) 
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          res.id, res.name, res.cnic, res.phone, res.email || null, res.parentName, res.parentPhone, res.type,
+          res.institutionOrOffice, res.roomNumber, res.status, res.admissionDate, res.dues, 
+          profileImageUrl, res.permanentAddress || null, res.currentAddress || null, 
+          res.emergencyContactName || null, res.emergencyContactPhone || null
+        ]
+      },
+      {
+        sql: "INSERT INTO users (identifier, password, role, name, id) VALUES (?, ?, ?, ?, ?)",
+        args: [login?.identifier || res.cnic, login?.password || res.phone, UserRole.RESIDENT, res.name, res.id]
+      }
+    ], "write");
+  },
+
+  updateCredentials: async (residentId: string, login: { identifier: string, password: string }) => {
+    if (isOfflineMode || !client) {
+      const users = ls.get<any[]>(LS_KEYS.USERS, []);
+      ls.set(LS_KEYS.USERS, users.map(u => u.id === residentId ? { ...u, identifier: login.identifier, password: login.password } : u));
+      return;
+    }
     await client.execute({
-      sql: `INSERT INTO residents (id, name, cnic, phone, email, parentName, parentPhone, type, 
-            institutionOrOffice, roomNumber, status, admissionDate, dues, profileImageUrl, 
-            permanentAddress, currentAddress, emergencyContactName, emergencyContactPhone) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        res.id, res.name, res.cnic, res.phone, res.email || null, res.parentName, res.parentPhone, res.type,
-        res.institutionOrOffice, res.roomNumber, res.status, res.admissionDate, res.dues, 
-        profileImageUrl, res.permanentAddress || null, res.currentAddress || null, 
-        res.emergencyContactName || null, res.emergencyContactPhone || null
-      ]
+      sql: "UPDATE users SET identifier = ?, password = ? WHERE id = ?",
+      args: [login.identifier, login.password, residentId]
     });
   },
 
@@ -184,7 +188,6 @@ export const dataStore = {
     const setClauseParts = updateFields.map(k => `${k} = ?`);
     if (profileImageUrl) setClauseParts.push('profileImageUrl = ?');
     const setClause = setClauseParts.join(', ');
-
     const args = updateFields.map(k => (updates as any)[k]);
     if (profileImageUrl) args.push(profileImageUrl);
     args.push(id);
@@ -196,11 +199,14 @@ export const dataStore = {
 
   deleteResident: async (id: string) => {
     if (isOfflineMode || !client) {
-      const data = ls.get<Resident[]>(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
-      ls.set(LS_KEYS.RESIDENTS, data.filter(r => r.id !== id));
+      ls.set(LS_KEYS.RESIDENTS, ls.get<Resident[]>(LS_KEYS.RESIDENTS, []).filter(r => r.id !== id));
+      ls.set(LS_KEYS.USERS, ls.get<any[]>(LS_KEYS.USERS, []).filter(u => u.id !== id));
       return;
     }
-    await client.execute({ sql: "DELETE FROM residents WHERE id = ?", args: [id] });
+    await client.batch([
+      { sql: "DELETE FROM residents WHERE id = ?", args: [id] },
+      { sql: "DELETE FROM users WHERE id = ?", args: [id] }
+    ], "write");
   },
 
   getRooms: async (): Promise<Room[]> => {
@@ -210,10 +216,7 @@ export const dataStore = {
   },
 
   setRooms: async (rooms: Room[]) => {
-    if (isOfflineMode || !client) {
-      ls.set(LS_KEYS.ROOMS, rooms);
-      return;
-    }
+    if (isOfflineMode || !client) { ls.set(LS_KEYS.ROOMS, rooms); return; }
     await client.execute("DELETE FROM rooms");
     for (const r of rooms) {
       await client.execute({
@@ -237,8 +240,7 @@ export const dataStore = {
 
   addUser: async (user: any) => {
     if (isOfflineMode || !client) {
-      const data = ls.get(LS_KEYS.USERS, []);
-      ls.set(LS_KEYS.USERS, [...data, user]);
+      ls.set(LS_KEYS.USERS, [...ls.get<any[]>(LS_KEYS.USERS, []), user]);
       return;
     }
     await client.execute({
@@ -260,10 +262,7 @@ export const dataStore = {
   },
 
   setGatePasses: async (passes: GatePass[]) => {
-    if (isOfflineMode || !client) {
-      ls.set(LS_KEYS.GATE_PASSES, passes);
-      return;
-    }
+    if (isOfflineMode || !client) { ls.set(LS_KEYS.GATE_PASSES, passes); return; }
     await client.execute("DELETE FROM gate_passes");
     for (const p of passes) {
       await client.execute({
@@ -274,83 +273,91 @@ export const dataStore = {
   },
 
   execute: async (stmt: any) => {
-    if (isOfflineMode || !client) {
-      console.warn("Manual SQL execution not supported in Offline Mode");
-      return { rows: [] };
-    }
+    if (isOfflineMode || !client) return { rows: [] };
     return await client.execute(stmt);
   },
 
-  exportAllData: async (): Promise<string> => {
-    const residents = await dataStore.getResidents();
-    const rooms = await dataStore.getRooms();
-    const billing = await dataStore.getBilling();
-    const complaints = await dataStore.getComplaints();
-    const passes = await dataStore.getGatePasses();
-    const users = await dataStore.getUsers();
-    return JSON.stringify({ residents, rooms, billing, complaints, gate_passes: passes, users }, null, 2);
+  exportAllData: async () => {
+    return JSON.stringify({ 
+      residents: await dataStore.getResidents(), 
+      rooms: await dataStore.getRooms(), 
+      billing: await dataStore.getBilling(), 
+      complaints: await dataStore.getComplaints(), 
+      gate_passes: await dataStore.getGatePasses(), 
+      users: await dataStore.getUsers() 
+    }, null, 2);
   },
 
   importAllData: async (json: string) => {
     const data = JSON.parse(json);
+    if (isOfflineMode || !client) {
+      if (data.residents) ls.set(LS_KEYS.RESIDENTS, data.residents);
+      if (data.rooms) ls.set(LS_KEYS.ROOMS, data.rooms);
+      if (data.billing) ls.set(LS_KEYS.BILLING, data.billing);
+      if (data.complaints) ls.set(LS_KEYS.COMPLAINTS, data.complaints);
+      if (data.gate_passes) ls.set(LS_KEYS.GATE_PASSES, data.gate_passes);
+      if (data.users) ls.set(LS_KEYS.USERS, data.users);
+      return;
+    }
     await dataStore.wipeAllData();
-    if (data.residents) for (const r of data.residents) await dataStore.addResident(r);
+    if (data.residents) {
+      for (const res of data.residents) {
+        await client.execute({
+          sql: `INSERT INTO residents (id, name, cnic, phone, email, parentName, parentPhone, type, 
+                institutionOrOffice, roomNumber, status, admissionDate, dues, profileImageUrl, 
+                permanentAddress, currentAddress, emergencyContactName, emergencyContactPhone) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            res.id, res.name, res.cnic, res.phone, res.email || null, res.parentName, res.parentPhone, res.type,
+            res.institutionOrOffice, res.roomNumber, res.status, res.admissionDate, res.dues, 
+            res.profileImageUrl || res.profileImage || null, res.permanentAddress || null, res.currentAddress || null, 
+            res.emergencyContactName || null, res.emergencyContactPhone || null
+          ]
+        });
+      }
+    }
     if (data.rooms) await dataStore.setRooms(data.rooms);
     if (data.billing) {
-      if (isOfflineMode || !client) {
-        ls.set(LS_KEYS.BILLING, data.billing);
-      } else {
-        for (const b of data.billing) {
-          await client.execute({
-            sql: "INSERT INTO billing (id, residentId, amount, type, status, dueDate, paymentMethod) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            args: [b.id, b.residentId, b.amount, b.type, b.status, b.dueDate, b.paymentMethod]
-          });
-        }
+      for (const b of data.billing) {
+        await client.execute({
+          sql: "INSERT INTO billing (id, residentId, amount, type, status, dueDate, paymentMethod) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          args: [b.id, b.residentId, b.amount, b.type, b.status, b.dueDate, b.paymentMethod || null]
+        });
       }
     }
     if (data.complaints) {
-      if (isOfflineMode || !client) {
-        ls.set(LS_KEYS.COMPLAINTS, data.complaints);
-      } else {
-        for (const c of data.complaints) {
-          await client.execute({
-            sql: "INSERT INTO complaints (id, residentId, title, category, status, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
-            args: [c.id, c.residentId, c.title, c.category, c.status, c.createdAt]
-          });
-        }
+      for (const c of data.complaints) {
+        await client.execute({
+          sql: "INSERT INTO complaints (id, residentId, title, category, status, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
+          args: [c.id, c.residentId, c.title, c.category, c.status, c.createdAt]
+        });
       }
     }
     if (data.gate_passes) await dataStore.setGatePasses(data.gate_passes);
     if (data.users) {
-      if (isOfflineMode || !client) {
-        ls.set(LS_KEYS.USERS, data.users);
-      } else {
-        for (const u of data.users) await dataStore.addUser(u);
+      for (const u of data.users) {
+        if (u.role === 'SUPER_ADMIN') {
+          const check = await client.execute({ sql: "SELECT identifier FROM users WHERE identifier = ?", args: [u.identifier] });
+          if (check.rows.length > 0) continue;
+        }
+        await client.execute({
+          sql: "INSERT INTO users (identifier, password, role, name, id) VALUES (?, ?, ?, ?, ?)",
+          args: [u.identifier, u.password, u.role, u.name, u.id]
+        });
       }
     }
   },
 
   wipeAllData: async () => {
-    if (isOfflineMode || !client) {
-      Object.values(LS_KEYS).forEach(k => localStorage.removeItem(k));
-      return;
-    }
+    if (isOfflineMode || !client) { Object.values(LS_KEYS).forEach(k => localStorage.removeItem(k)); return; }
     await client.batch([
-      "DELETE FROM residents",
-      "DELETE FROM rooms",
-      "DELETE FROM billing",
-      "DELETE FROM users WHERE role != 'SUPER_ADMIN'",
-      "DELETE FROM complaints",
-      "DELETE FROM gate_passes"
+      "DELETE FROM residents", "DELETE FROM rooms", "DELETE FROM billing", 
+      "DELETE FROM users WHERE role != 'SUPER_ADMIN'", "DELETE FROM complaints", "DELETE FROM gate_passes"
     ], "write");
   },
 
   resetToDefaults: async () => {
     await dataStore.wipeAllData();
     for (const r of MOCK_RESIDENTS) await dataStore.addResident(r);
-    await dataStore.setRooms([
-      { id: 'rm1', number: '102-A', type: 'AC_2', features: ['AC', 'Attached Bath'], status: 'AVAILABLE', currentOccupancy: 1, capacity: 2 },
-      { id: 'rm2', number: '305-B', type: 'NON_AC_3', features: ['Fan', 'Locker'], status: 'AVAILABLE', currentOccupancy: 1, capacity: 3 }
-    ]);
   }
 };
