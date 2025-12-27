@@ -3,6 +3,17 @@ import React, { useState, useEffect } from 'react';
 import { Resident, ResidentType, Room } from '../types.ts';
 import { dataStore } from '../services/dataStore.ts';
 
+const COMMON_FEATURES = [
+  'AC',
+  'Attached Bath',
+  'Balcony',
+  'Study Table',
+  'Locker',
+  'Fan',
+  'Heater',
+  'Window View'
+];
+
 const ResidentsView: React.FC = () => {
   const [viewMode, setViewMode] = useState<'RESIDENTS' | 'ROOMS'>('RESIDENTS');
   const [residents, setResidents] = useState<Resident[]>([]);
@@ -31,6 +42,32 @@ const ResidentsView: React.FC = () => {
       dues: 0 
     });
     setActiveModal('ADD_RES');
+  };
+
+  const handleOpenAddRoom = () => {
+    setFormData({ 
+      number: '', 
+      type: 'NON_AC_2', 
+      features: [], 
+      status: 'AVAILABLE', 
+      capacity: 2 
+    });
+    setActiveModal('ADD_ROOM');
+  };
+
+  const toggleFeature = (feature: string) => {
+    const currentFeatures = formData.features || [];
+    if (currentFeatures.includes(feature)) {
+      setFormData({
+        ...formData,
+        features: currentFeatures.filter((f: string) => f !== feature)
+      });
+    } else {
+      setFormData({
+        ...formData,
+        features: [...currentFeatures, feature]
+      });
+    }
   };
 
   const saveResident = (e: React.FormEvent) => {
@@ -98,7 +135,7 @@ const ResidentsView: React.FC = () => {
           />
         </div>
         <button 
-          onClick={viewMode === 'RESIDENTS' ? handleOpenAddRes : () => { setFormData({ number: '', type: 'AC_2', features: [], status: 'AVAILABLE', capacity: 2 }); setActiveModal('ADD_ROOM'); }}
+          onClick={viewMode === 'RESIDENTS' ? handleOpenAddRes : handleOpenAddRoom}
           className="bg-slate-900 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 flex items-center gap-2"
         >
           <i className="fa-solid fa-plus"></i> {viewMode === 'RESIDENTS' ? 'Add Resident' : 'Add Room'}
@@ -141,33 +178,122 @@ const ResidentsView: React.FC = () => {
               ))}
             </tbody>
           </table>
+          {filteredResidents.length === 0 && <div className="p-20 text-center text-slate-400 font-black text-xs uppercase">No Residents Found</div>}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {rooms.map(room => (
-            <div key={room.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm group">
+            <div key={room.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm group hover:shadow-xl transition-all">
               <div className="flex justify-between mb-4">
                 <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${room.status === 'AVAILABLE' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}>{room.status}</span>
                 <i className="fa-solid fa-door-open text-slate-100 text-2xl"></i>
               </div>
               <h3 className="text-2xl font-black text-slate-900">Room {room.number}</h3>
-              <p className="text-[10px] font-black text-slate-400 uppercase mt-1">{room.type}</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase mt-1">{room.type.replace('_', ' ')}</p>
+              
+              {room.features && room.features.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {room.features.map((feature, i) => (
+                    <span key={i} className="text-[8px] font-black bg-slate-50 text-slate-500 border border-slate-100 px-2 py-0.5 rounded-full uppercase tracking-tighter">
+                      {feature}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-6 pt-6 border-t border-slate-50 flex justify-between items-center">
+                 <span className="text-xs font-bold text-slate-600">{room.currentOccupancy} / {room.capacity} Beds</span>
+                 <button className="text-[9px] font-black text-emerald-600 uppercase">View Log</button>
+              </div>
             </div>
           ))}
+          {rooms.length === 0 && <div className="col-span-full p-20 text-center text-slate-400 font-black text-xs uppercase bg-white rounded-[40px] border border-slate-100">No Rooms Configured</div>}
         </div>
       )}
 
+      {/* Add Resident Modal */}
       {activeModal === 'ADD_RES' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4">
-          <form onSubmit={saveResident} className="bg-white w-full max-w-2xl rounded-[48px] shadow-2xl p-10">
-             <h3 className="text-2xl font-black text-slate-900 mb-8">New Admission</h3>
+          <form onSubmit={saveResident} className="bg-white w-full max-w-2xl rounded-[48px] shadow-2xl p-10 animate-in zoom-in">
+             <h3 className="text-2xl font-black text-slate-900 mb-8">New Admission Enrollment</h3>
              <div className="grid grid-cols-2 gap-6">
-                <input required placeholder="Full Name" className="w-full bg-slate-50 p-4 rounded-2xl" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-                <input required placeholder="CNIC" className="w-full bg-slate-50 p-4 rounded-2xl" value={formData.cnic} onChange={e => setFormData({...formData, cnic: e.target.value})} />
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Full Legal Name</label>
+                  <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none focus:bg-white border focus:border-emerald-500" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">CNIC (17301-...)</label>
+                  <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none focus:bg-white border focus:border-emerald-500" value={formData.cnic} onChange={e => setFormData({...formData, cnic: e.target.value})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Assigned Room</label>
+                  <select className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.roomNumber} onChange={e => setFormData({...formData, roomNumber: e.target.value})}>
+                    <option value="">Select Room</option>
+                    {rooms.filter(r => r.status !== 'OCCUPIED').map(r => <option key={r.id} value={r.number}>{r.number} ({r.currentOccupancy}/{r.capacity})</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Mobile Contact</label>
+                  <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                </div>
              </div>
              <div className="mt-8 flex gap-4">
-                <button type="button" onClick={() => setActiveModal(null)} className="flex-1 py-4 bg-slate-100 rounded-2xl">Cancel</button>
-                <button type="submit" className="flex-[2] py-4 bg-emerald-600 text-white rounded-2xl">Register</button>
+                <button type="button" onClick={() => setActiveModal(null)} className="flex-1 py-4 bg-slate-100 rounded-2xl font-black text-[10px] uppercase">Cancel</button>
+                <button type="submit" className="flex-[2] py-4 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl shadow-emerald-500/20">Authorize Admission</button>
+             </div>
+          </form>
+        </div>
+      )}
+
+      {/* Add Room Modal */}
+      {activeModal === 'ADD_ROOM' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4">
+          <form onSubmit={saveRoom} className="bg-white w-full max-w-2xl rounded-[48px] shadow-2xl p-10 animate-in zoom-in overflow-y-auto max-h-[90vh] custom-scrollbar">
+             <h3 className="text-2xl font-black text-slate-900 mb-8">Register Room Inventory</h3>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Room Number</label>
+                  <input required placeholder="e.g. 405-C" className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold border outline-none focus:border-slate-900" value={formData.number} onChange={e => setFormData({...formData, number: e.target.value})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Room Category</label>
+                  <select className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold border outline-none focus:border-slate-900" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value as any})}>
+                    <option value="AC_2">AC - 2 Seater</option>
+                    <option value="AC_3">AC - 3 Seater</option>
+                    <option value="NON_AC_2">Non-AC - 2 Seater</option>
+                    <option value="NON_AC_3">Non-AC - 3 Seater</option>
+                    <option value="HALL">Dormitory Hall</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Bed Capacity</label>
+                  <input required type="number" min="1" className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold border outline-none focus:border-slate-900" value={formData.capacity} onChange={e => setFormData({...formData, capacity: Number(e.target.value)})} />
+                </div>
+             </div>
+
+             <div className="mb-8">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-4 block">Room Features & Amenities</label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                   {COMMON_FEATURES.map(feature => (
+                     <label key={feature} className={`flex items-center gap-3 p-4 rounded-2xl border-2 transition-all cursor-pointer ${formData.features?.includes(feature) ? 'bg-emerald-50 border-emerald-500 text-emerald-900' : 'bg-slate-50 border-slate-50 text-slate-500 hover:border-slate-200'}`}>
+                        <input 
+                          type="checkbox" 
+                          className="hidden" 
+                          checked={formData.features?.includes(feature)}
+                          onChange={() => toggleFeature(feature)}
+                        />
+                        <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${formData.features?.includes(feature) ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-slate-200'}`}>
+                           {formData.features?.includes(feature) && <i className="fa-solid fa-check text-[10px] text-white"></i>}
+                        </div>
+                        <span className="text-xs font-black uppercase tracking-tighter">{feature}</span>
+                     </label>
+                   ))}
+                </div>
+             </div>
+
+             <div className="mt-8 flex gap-4">
+                <button type="button" onClick={() => setActiveModal(null)} className="flex-1 py-4 bg-slate-100 rounded-2xl font-black text-[10px] uppercase">Discard</button>
+                <button type="submit" className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl">Confirm Room Registration</button>
              </div>
           </form>
         </div>
