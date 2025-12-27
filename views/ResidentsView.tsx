@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Resident, ResidentType, Room } from '../types.ts';
 import { dataStore } from '../services/dataStore.ts';
 
@@ -21,6 +21,7 @@ const ResidentsView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeModal, setActiveModal] = useState<'ADD_RES' | 'EDIT_RES' | 'ADD_ROOM' | 'DELETE_RES' | null>(null);
   const [formData, setFormData] = useState<any>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setResidents(dataStore.getResidents());
@@ -39,7 +40,12 @@ const ResidentsView: React.FC = () => {
       roomNumber: '',
       status: 'ACTIVE', 
       admissionDate: new Date().toISOString().split('T')[0], 
-      dues: 0 
+      dues: 0,
+      permanentAddress: '',
+      currentAddress: '',
+      emergencyContactName: '',
+      emergencyContactPhone: '',
+      profileImage: ''
     });
     setActiveModal('ADD_RES');
   };
@@ -53,6 +59,17 @@ const ResidentsView: React.FC = () => {
       capacity: 2 
     });
     setActiveModal('ADD_ROOM');
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData({ ...formData, profileImage: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const toggleFeature = (feature: string) => {
@@ -218,32 +235,111 @@ const ResidentsView: React.FC = () => {
       {/* Add Resident Modal */}
       {activeModal === 'ADD_RES' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4">
-          <form onSubmit={saveResident} className="bg-white w-full max-w-2xl rounded-[48px] shadow-2xl p-10 animate-in zoom-in">
-             <h3 className="text-2xl font-black text-slate-900 mb-8">New Admission Enrollment</h3>
-             <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Full Legal Name</label>
-                  <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none focus:bg-white border focus:border-emerald-500" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+          <form onSubmit={saveResident} className="bg-white w-full max-w-4xl rounded-[48px] shadow-2xl p-10 animate-in zoom-in max-h-[90vh] overflow-y-auto custom-scrollbar">
+             <div className="flex justify-between items-start mb-8">
+                <div>
+                   <h3 className="text-3xl font-black text-slate-900 tracking-tighter">Formal Resident Enrollment</h3>
+                   <p className="text-sm text-slate-500 font-bold uppercase tracking-widest mt-1">Official Verification Data Entry</p>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">CNIC (17301-...)</label>
-                  <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none focus:bg-white border focus:border-emerald-500" value={formData.cnic} onChange={e => setFormData({...formData, cnic: e.target.value})} />
+                <button type="button" onClick={() => setActiveModal(null)} className="text-slate-300 hover:text-slate-900 transition-colors"><i className="fa-solid fa-xmark text-2xl"></i></button>
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+                {/* Profile Photo Column */}
+                <div className="flex flex-col items-center gap-4">
+                   <div className="w-48 h-48 rounded-[40px] bg-slate-50 border-4 border-dashed border-slate-200 flex items-center justify-center relative overflow-hidden group">
+                      {formData.profileImage ? (
+                        <img src={formData.profileImage} className="w-full h-full object-cover" alt="Upload Preview" />
+                      ) : (
+                        <div className="text-center">
+                           <i className="fa-solid fa-camera text-4xl text-slate-200 mb-2"></i>
+                           <p className="text-[10px] font-black text-slate-300 uppercase">Profile Photo</p>
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                         <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-white text-slate-900 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl">Browse File</button>
+                      </div>
+                   </div>
+                   <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+                   <p className="text-[10px] text-slate-400 text-center font-bold px-4">Requirement: Front-facing clear portrait as per district verification standards.</p>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Assigned Room</label>
-                  <select className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.roomNumber} onChange={e => setFormData({...formData, roomNumber: e.target.value})}>
-                    <option value="">Select Room</option>
-                    {rooms.filter(r => r.status !== 'OCCUPIED').map(r => <option key={r.id} value={r.number}>{r.number} ({r.currentOccupancy}/{r.capacity})</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Mobile Contact</label>
-                  <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+
+                {/* Form Data Column */}
+                <div className="md:col-span-2 grid grid-cols-2 gap-6">
+                   <div className="col-span-2 border-b border-slate-50 pb-2 mb-2">
+                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em]">Personal Information</p>
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Full Legal Name</label>
+                      <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none focus:bg-white border focus:border-emerald-500 transition-all" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black text-slate-400 uppercase ml-1">CNIC (Identity Card)</label>
+                      <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.cnic} onChange={e => setFormData({...formData, cnic: e.target.value})} />
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Mobile Primary</label>
+                      <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Profession (Category)</label>
+                      <select required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value as any})}>
+                         <option value={ResidentType.STUDENT}>Student</option>
+                         <option value={ResidentType.EMPLOYEE}>Working Professional</option>
+                      </select>
+                   </div>
+
+                   <div className="col-span-2 border-b border-slate-50 pb-2 mt-4 mb-2">
+                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em]">Affiliation & Local Presence</p>
+                   </div>
+                   <div className="space-y-1 col-span-2">
+                      <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Institution or Office Name</label>
+                      <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.institutionOrOffice} onChange={e => setFormData({...formData, institutionOrOffice: e.target.value})} />
+                   </div>
+                   <div className="space-y-1 col-span-2">
+                      <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Permanent Home Address</label>
+                      <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.permanentAddress} onChange={e => setFormData({...formData, permanentAddress: e.target.value})} />
+                   </div>
+                   <div className="space-y-1 col-span-2">
+                      <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Local Address (Peshawar Branch)</label>
+                      <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.currentAddress} onChange={e => setFormData({...formData, currentAddress: e.target.value})} />
+                   </div>
+
+                   <div className="col-span-2 border-b border-slate-50 pb-2 mt-4 mb-2">
+                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em]">Emergency & Guardianship</p>
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Emergency Contact Person</label>
+                      <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.emergencyContactName} onChange={e => setFormData({...formData, emergencyContactName: e.target.value})} />
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Emergency Phone (Mobile)</label>
+                      <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.emergencyContactPhone} onChange={e => setFormData({...formData, emergencyContactPhone: e.target.value})} />
+                   </div>
+
+                   <div className="col-span-2 border-b border-slate-50 pb-2 mt-4 mb-2">
+                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em]">Logistics & Accounts</p>
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Assigned Room Unit</label>
+                      <select className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.roomNumber} onChange={e => setFormData({...formData, roomNumber: e.target.value})}>
+                        <option value="">Pending Assignment</option>
+                        {rooms.filter(r => r.status !== 'OCCUPIED').map(r => <option key={r.id} value={r.number}>{r.number} ({r.currentOccupancy}/{r.capacity})</option>)}
+                      </select>
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Enrollment Total Fee (Dues)</label>
+                      <input required type="number" className="w-full bg-emerald-50 p-4 rounded-2xl text-sm font-black text-emerald-700 outline-none border border-emerald-100" value={formData.dues} onChange={e => setFormData({...formData, dues: Number(e.target.value)})} />
+                   </div>
                 </div>
              </div>
-             <div className="mt-8 flex gap-4">
-                <button type="button" onClick={() => setActiveModal(null)} className="flex-1 py-4 bg-slate-100 rounded-2xl font-black text-[10px] uppercase">Cancel</button>
-                <button type="submit" className="flex-[2] py-4 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl shadow-emerald-500/20">Authorize Admission</button>
+
+             <div className="mt-12 flex gap-4 pt-8 border-t border-slate-50">
+                <button type="button" onClick={() => setActiveModal(null)} className="flex-1 py-5 bg-slate-100 rounded-3xl font-black text-[11px] uppercase tracking-widest text-slate-500 hover:bg-slate-200 transition-all">Cancel Enrollment</button>
+                <button type="submit" className="flex-[2] py-5 bg-slate-900 text-white rounded-3xl font-black text-[11px] uppercase tracking-[0.3em] shadow-2xl shadow-slate-300 hover:bg-slate-800 transition-all flex items-center justify-center gap-3">
+                   <i className="fa-solid fa-file-signature text-emerald-400"></i>
+                   Authorize Global Registry Entry
+                </button>
              </div>
           </form>
         </div>

@@ -28,6 +28,10 @@ export interface Resident {
   inventory?: string[];
   profileImage?: string;
   dues: number;
+  permanentAddress?: string;
+  currentAddress?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
 }
 
 export interface Room {
