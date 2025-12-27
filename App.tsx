@@ -1,18 +1,18 @@
 
 import React, { useState, useEffect } from 'react';
-import Sidebar from './components/Sidebar';
-import DashboardView from './views/DashboardView';
-import ResidentsView from './views/ResidentsView';
-import ReportsView from './views/ReportsView';
-import BillingView from './views/BillingView';
-import SecurityView from './views/SecurityView';
-import MessView from './views/MessView';
-import ComplaintsView from './views/ComplaintsView';
-import ResidentPortal from './views/ResidentPortal';
-import SettingsView from './views/SettingsView';
-import GuestView from './views/GuestView';
-import { UserRole } from './types';
-import { dataStore } from './services/dataStore';
+import Sidebar from './components/Sidebar.tsx';
+import DashboardView from './views/DashboardView.tsx';
+import ResidentsView from './views/ResidentsView.tsx';
+import ReportsView from './views/ReportsView.tsx';
+import BillingView from './views/BillingView.tsx';
+import SecurityView from './views/SecurityView.tsx';
+import MessView from './views/MessView.tsx';
+import ComplaintsView from './views/ComplaintsView.tsx';
+import ResidentPortal from './views/ResidentPortal.tsx';
+import SettingsView from './views/SettingsView.tsx';
+import GuestView from './views/GuestView.tsx';
+import { UserRole } from './types.ts';
+import { dataStore } from './services/dataStore.ts';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<{ role: UserRole; name: string; id?: string } | null>(null);
@@ -25,12 +25,17 @@ const App: React.FC = () => {
 
     const savedUser = localStorage.getItem('pesh_hms_user');
     if (savedUser) {
-      const parsedUser = JSON.parse(savedUser);
-      setUser(parsedUser);
-      if (parsedUser.role === UserRole.RESIDENT) {
-        setCurrentView('my_portal');
-      } else {
-        setCurrentView('dashboard');
+      try {
+        const parsedUser = JSON.parse(savedUser);
+        setUser(parsedUser);
+        if (parsedUser.role === UserRole.RESIDENT) {
+          setCurrentView('my_portal');
+        } else {
+          setCurrentView('dashboard');
+        }
+      } catch (e) {
+        console.error("Auth restoration failed", e);
+        localStorage.removeItem('pesh_hms_user');
       }
     }
     setIsInitializing(false);
@@ -69,7 +74,6 @@ const App: React.FC = () => {
   const renderView = () => {
     const rid = user.id || '1';
 
-    // RBAC: Residents can only access specific views
     if (user.role === UserRole.RESIDENT) {
       switch (currentView) {
         case 'my_portal': return <ResidentPortal residentId={rid} />;
@@ -81,7 +85,6 @@ const App: React.FC = () => {
       }
     }
 
-    // RBAC: Admins & Wardens
     switch (currentView) {
       case 'dashboard': return <DashboardView />;
       case 'residents': return <ResidentsView />;
