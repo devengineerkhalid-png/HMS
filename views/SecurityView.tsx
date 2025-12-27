@@ -22,17 +22,23 @@ const SecurityView: React.FC<SecurityViewProps> = ({ residentMode, residentId })
   });
 
   useEffect(() => {
-    setPasses(dataStore.getGatePasses());
-    setResidents(dataStore.getResidents());
+    // Correctly handle async fetching in useEffect
+    const loadData = async () => {
+      const fetchedPasses = await dataStore.getGatePasses();
+      const fetchedResidents = await dataStore.getResidents();
+      setPasses(fetchedPasses);
+      setResidents(fetchedResidents);
+    };
+    loadData();
   }, []);
 
-  const handleStatusUpdate = (id: string, newStatus: 'APPROVED' | 'REJECTED') => {
+  const handleStatusUpdate = async (id: string, newStatus: 'APPROVED' | 'REJECTED') => {
     const updatedPasses = passes.map(p => p.id === id ? { ...p, status: newStatus } : p);
     setPasses(updatedPasses);
-    dataStore.setGatePasses(updatedPasses);
+    await dataStore.setGatePasses(updatedPasses);
   };
 
-  const handleSubmitRequest = (e: React.FormEvent) => {
+  const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!residentId) return;
 
@@ -48,7 +54,7 @@ const SecurityView: React.FC<SecurityViewProps> = ({ residentMode, residentId })
 
     const updatedPasses = [pass, ...passes];
     setPasses(updatedPasses);
-    dataStore.setGatePasses(updatedPasses);
+    await dataStore.setGatePasses(updatedPasses);
     setShowRequestModal(false);
     setNewPass({
       requestType: 'DAY_OUT',

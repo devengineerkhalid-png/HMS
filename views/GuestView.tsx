@@ -27,17 +27,23 @@ const GuestView: React.FC<GuestViewProps> = ({ onLogin }) => {
     setIsLoading(true);
     setError('');
 
-    setTimeout(() => {
-      const users = dataStore.getUsers();
-      const user = users.find((u: any) => u.identifier === loginData.identifier && u.password === loginData.password);
+    // Correctly handle async user retrieval
+    setTimeout(async () => {
+      try {
+        const users = await dataStore.getUsers();
+        const user = users.find((u: any) => u.identifier === loginData.identifier && u.password === loginData.password);
 
-      if (user) {
-        localStorage.setItem('pesh_hms_user', JSON.stringify(user));
-        onLogin(user);
-      } else {
-        setError('Authentication Failed: Invalid ID or Keyphrase.');
+        if (user) {
+          localStorage.setItem('pesh_hms_user', JSON.stringify(user));
+          onLogin(user);
+        } else {
+          setError('Authentication Failed: Invalid ID or Keyphrase.');
+        }
+      } catch (err) {
+        setError('Database Error: Unable to authenticate.');
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     }, 1000);
   };
 

@@ -2,18 +2,11 @@
 import { GoogleGenAI } from "@google/genai";
 import { Resident } from "../types.ts";
 
-// Helper to safely get the API key
-const getApiKey = () => {
-  return (typeof process !== 'undefined' && process.env?.API_KEY) || "";
-};
-
 export class GeminiService {
-  private getClient() {
-    return new GoogleGenAI({ apiKey: getApiKey() });
-  }
-
+  // Use gemini-3-flash-preview for reporting tasks
   async generatePoliceReport(residents: Resident[]) {
-    const ai = this.getClient();
+    // Correctly initialize with process.env.API_KEY
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const prompt = `Generate a formal text report for the Peshawar Police Station regarding the current active residents of a hostel. 
     The report should follow local official standards and include: 
     Name, CNIC, Father's Name, Permanent Address (simulated), and Local Reference.
@@ -27,6 +20,7 @@ export class GeminiService {
         model: 'gemini-3-flash-preview',
         contents: prompt,
       });
+      // Correctly access response.text property (not method)
       return response.text;
     } catch (error) {
       console.error("AI Report Generation Failed", error);
@@ -35,7 +29,8 @@ export class GeminiService {
   }
 
   async calculateGeneratorSurcharge(totalFuelCost: number, numberOfRooms: number, hoursOfUsage: number) {
-    const ai = this.getClient();
+    // Correctly initialize with process.env.API_KEY
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const prompt = `As a hostel financial assistant in Peshawar, calculate a fair shared 'Generator Surcharge' for a hostel.
     Total Fuel Cost: ${totalFuelCost} PKR.
     Number of Rooms: ${numberOfRooms}.
@@ -48,6 +43,7 @@ export class GeminiService {
         model: 'gemini-3-flash-preview',
         contents: prompt,
       });
+      // Correctly access response.text property (not method)
       return response.text;
     } catch (error) {
       console.error("AI Calculation Failed", error);

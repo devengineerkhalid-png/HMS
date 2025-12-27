@@ -18,36 +18,34 @@ const App: React.FC = () => {
   const [user, setUser] = useState<{ role: UserRole; name: string; id?: string } | null>(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [isInitializing, setIsInitializing] = useState(true);
+  const [dbStatus, setDbStatus] = useState<'CONNECTING' | 'CONNECTED' | 'ERROR'>('CONNECTING');
 
   useEffect(() => {
-    // Initialize LocalStorage DB
-    dataStore.init();
-
-    const savedUser = localStorage.getItem('pesh_hms_user');
-    if (savedUser) {
+    const initializeApp = async () => {
       try {
-        const parsedUser = JSON.parse(savedUser);
-        setUser(parsedUser);
-        if (parsedUser.role === UserRole.RESIDENT) {
-          setCurrentView('my_portal');
-        } else {
-          setCurrentView('dashboard');
+        await dataStore.init();
+        setDbStatus('CONNECTED');
+        
+        const savedUser = localStorage.getItem('pesh_hms_user');
+        if (savedUser) {
+          const parsedUser = JSON.parse(savedUser);
+          setUser(parsedUser);
+          setCurrentView(parsedUser.role === UserRole.RESIDENT ? 'my_portal' : 'dashboard');
         }
       } catch (e) {
-        console.error("Auth restoration failed", e);
-        localStorage.removeItem('pesh_hms_user');
+        console.error("App initialization failed:", e);
+        setDbStatus('ERROR');
+      } finally {
+        setIsInitializing(false);
       }
-    }
-    setIsInitializing(false);
+    };
+
+    initializeApp();
   }, []);
 
   const handleLoginSuccess = (userData: any) => {
     setUser(userData);
-    if (userData.role === UserRole.RESIDENT) {
-      setCurrentView('my_portal');
-    } else {
-      setCurrentView('dashboard');
-    }
+    setCurrentView(userData.role === UserRole.RESIDENT ? 'my_portal' : 'dashboard');
   };
 
   const handleLogout = () => {
@@ -60,8 +58,8 @@ const App: React.FC = () => {
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 text-center">
           <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin shadow-2xl shadow-emerald-500/20"></div>
-          <p className="text-emerald-500 font-black tracking-widest text-[10px] uppercase mt-4">Frontier HMS Core Initializing...</p>
-          <p className="text-slate-500 text-[8px] font-bold uppercase">Verifying Regional Database Connect</p>
+          <p className="text-emerald-500 font-black tracking-widest text-[10px] uppercase mt-4">Peshawar Cloud Node Syncing...</p>
+          <p className="text-slate-500 text-[8px] font-bold uppercase">Connecting to Turso Serverless SQLite</p>
         </div>
       </div>
     );
@@ -120,16 +118,22 @@ const App: React.FC = () => {
               <span className="text-3xl font-black text-slate-900 tracking-tighter">
                 {user.role === UserRole.RESIDENT ? `Assalam-o-Alaikum, ${user.name.split(' ')[0]}` : user.name}
               </span>
-              <span className="bg-emerald-100 text-emerald-700 text-[10px] px-3 py-1 rounded-full font-black border border-emerald-200 uppercase tracking-widest">
-                Active Session
-              </span>
+              <div className="flex items-center gap-2">
+                 <span className="bg-emerald-100 text-emerald-700 text-[10px] px-3 py-1 rounded-full font-black border border-emerald-200 uppercase tracking-widest">
+                  Active Session
+                 </span>
+                 <div className={`flex items-center gap-2 px-3 py-1 rounded-full border text-[9px] font-black uppercase tracking-tighter ${dbStatus === 'CONNECTED' ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-red-50 border-red-100 text-red-600'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${dbStatus === 'CONNECTED' ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
+                    Turso {dbStatus}
+                 </div>
+              </div>
             </div>
           </div>
           
           <div className="flex items-center gap-4">
              <div className="flex items-center gap-3 bg-white border border-slate-100 px-4 py-2 rounded-2xl shadow-sm">
-                <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-emerald-400 font-black shadow-lg shadow-slate-200 uppercase">
-                   {user.name.charAt(0)}
+                <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-emerald-400 font-black shadow-lg shadow-slate-200 uppercase overflow-hidden">
+                   {user.role === UserRole.RESIDENT ? <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`} alt="" /> : user.name.charAt(0)}
                 </div>
                 <div className="text-left hidden lg:block">
                    <p className="text-xs font-black text-slate-900 leading-none">{user.name}</p>
