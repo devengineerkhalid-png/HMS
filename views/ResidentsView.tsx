@@ -40,7 +40,7 @@ const ResidentsView: React.FC = () => {
       roomNumber: '',
       status: 'ACTIVE', 
       admissionDate: new Date().toISOString().split('T')[0], 
-      dues: 0,
+      dues: '', // Initialized as empty string for better UX
       permanentAddress: '',
       currentAddress: '',
       emergencyContactName: '',
@@ -56,7 +56,7 @@ const ResidentsView: React.FC = () => {
       type: 'NON_AC_2', 
       features: [], 
       status: 'AVAILABLE', 
-      capacity: 2 
+      capacity: '' // Initialized as empty string for better UX
     });
     setActiveModal('ADD_ROOM');
   };
@@ -89,7 +89,8 @@ const ResidentsView: React.FC = () => {
 
   const saveResident = (e: React.FormEvent) => {
     e.preventDefault();
-    const newRes = { ...formData, id: `res_${Date.now()}` } as Resident;
+    // Convert dues back to number for storage
+    const newRes = { ...formData, dues: Number(formData.dues) || 0, id: `res_${Date.now()}` } as Resident;
     const updated = [newRes, ...residents];
     setResidents(updated);
     dataStore.setResidents(updated);
@@ -114,7 +115,8 @@ const ResidentsView: React.FC = () => {
 
   const saveRoom = (e: React.FormEvent) => {
     e.preventDefault();
-    const newRoom = { ...formData, id: `rm_${Date.now()}`, currentOccupancy: 0 } as Room;
+    // Convert capacity back to number for storage
+    const newRoom = { ...formData, capacity: Number(formData.capacity) || 1, id: `rm_${Date.now()}`, currentOccupancy: 0 } as Room;
     const updated = [newRoom, ...rooms];
     setRooms(updated);
     dataStore.setRooms(updated);
@@ -329,7 +331,19 @@ const ResidentsView: React.FC = () => {
                    </div>
                    <div className="space-y-1">
                       <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Enrollment Total Fee (Dues)</label>
-                      <input required type="number" className="w-full bg-emerald-50 p-4 rounded-2xl text-sm font-black text-emerald-700 outline-none border border-emerald-100" value={formData.dues} onChange={e => setFormData({...formData, dues: Number(e.target.value)})} />
+                      <input 
+                        required 
+                        type="text" 
+                        placeholder="7000"
+                        className="w-full bg-emerald-50 p-4 rounded-2xl text-sm font-black text-emerald-700 outline-none border border-emerald-100" 
+                        value={formData.dues} 
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === '' || /^\d+$/.test(val)) {
+                            setFormData({...formData, dues: val});
+                          }
+                        }} 
+                      />
                    </div>
                 </div>
              </div>
@@ -367,7 +381,19 @@ const ResidentsView: React.FC = () => {
                 </div>
                 <div className="space-y-1">
                   <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Bed Capacity</label>
-                  <input required type="number" min="1" className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold border outline-none focus:border-slate-900" value={formData.capacity} onChange={e => setFormData({...formData, capacity: Number(e.target.value)})} />
+                  <input 
+                    required 
+                    type="text" 
+                    placeholder="2"
+                    className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold border outline-none focus:border-slate-900" 
+                    value={formData.capacity} 
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === '' || /^\d+$/.test(val)) {
+                        setFormData({...formData, capacity: val});
+                      }
+                    }} 
+                  />
                 </div>
              </div>
 
