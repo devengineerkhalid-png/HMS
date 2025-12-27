@@ -159,7 +159,11 @@ const ResidentsView: React.FC = () => {
                 <tr key={r.id} className="hover:bg-slate-50 transition-all group">
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black">{r.name.charAt(0)}</div>
+                      {r.profileImage ? (
+                        <img src={r.profileImage} className="w-10 h-10 rounded-xl object-cover border border-slate-100" alt={r.name} />
+                      ) : (
+                        <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black">{r.name.charAt(0)}</div>
+                      )}
                       <div>
                         <p className="font-black text-slate-900 leading-none mb-1">{r.name}</p>
                         <p className="text-[10px] text-slate-400 font-bold uppercase">{r.cnic}</p>
