@@ -10,7 +10,8 @@ const KEYS = {
   GATE_PASSES: 'pesh_hms_gate_passes',
   ROOMS: 'pesh_hms_rooms',
   INVENTORY: 'pesh_hms_inventory',
-  USERS: 'pesh_hms_auth_users'
+  USERS: 'pesh_hms_auth_users',
+  HOSTEL_CONFIG: 'pesh_hms_config'
 };
 
 const INITIAL_ROOMS: Room[] = [
@@ -36,6 +37,52 @@ export const dataStore = {
         { identifier: 'admin', password: 'admin123', role: 'SUPER_ADMIN', name: 'Super Admin' },
         { identifier: 'warden', password: 'warden123', role: 'WARDEN', name: 'Warden Ali' }
       ]));
+    }
+  },
+
+  // Bulk Operations
+  resetToDefaults: () => {
+    localStorage.clear();
+    dataStore.init();
+    window.location.reload();
+  },
+
+  wipeAllData: () => {
+    const adminUser = dataStore.getUsers().find((u: any) => u.identifier === 'admin');
+    localStorage.clear();
+    localStorage.setItem(KEYS.USERS, JSON.stringify([adminUser]));
+    localStorage.setItem(KEYS.RESIDENTS, JSON.stringify([]));
+    localStorage.setItem(KEYS.BILLING, JSON.stringify([]));
+    localStorage.setItem(KEYS.EXPENSES, JSON.stringify([]));
+    localStorage.setItem(KEYS.COMPLAINTS, JSON.stringify([]));
+    localStorage.setItem(KEYS.GATE_PASSES, JSON.stringify([]));
+    localStorage.setItem(KEYS.ROOMS, JSON.stringify([]));
+    localStorage.setItem(KEYS.INVENTORY, JSON.stringify([]));
+    window.location.reload();
+  },
+
+  exportAllData: () => {
+    const data: any = {};
+    Object.keys(KEYS).forEach(key => {
+      const storageKey = (KEYS as any)[key];
+      data[key] = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    });
+    return JSON.stringify(data, null, 2);
+  },
+
+  importAllData: (jsonString: string) => {
+    try {
+      const data = JSON.parse(jsonString);
+      Object.keys(KEYS).forEach(key => {
+        const storageKey = (KEYS as any)[key];
+        if (data[key]) {
+          localStorage.setItem(storageKey, JSON.stringify(data[key]));
+        }
+      });
+      window.location.reload();
+    } catch (e) {
+      console.error("Import failed", e);
+      alert("Invalid backup file.");
     }
   },
 
