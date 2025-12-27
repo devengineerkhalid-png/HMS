@@ -1,0 +1,7 @@
+{
+  "name": "Peshawar HMS - Smart Hostel Pro",
+  "description": "A comprehensive hostel management system tailored for the Peshawar market, featuring resident profiles, multi-tier billing, security gate passes, and police verification reports.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
