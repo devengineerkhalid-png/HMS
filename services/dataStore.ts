@@ -1,21 +1,22 @@
-
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Resident, BillingRecord, Room, Complaint, GatePass, UserRole, UserAccount } from '../types';
 import { MOCK_RESIDENTS, MOCK_BILLING, MOCK_COMPLAINTS } from '../constants';
 
-const SUPABASE_URL = (process.env as any).SUPABASE_URL;
-const SUPABASE_ANON_KEY = (process.env as any).SUPABASE_ANON_KEY;
+// Fix: Access environment variables directly from process.env instead of window.process
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
 let supabase: SupabaseClient | null = null;
 let isOfflineMode = false;
 
 const isSupabaseConfigured = () => {
-  return SUPABASE_URL && SUPABASE_URL.startsWith('http') && SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.length > 20;
+  return !!(SUPABASE_URL && SUPABASE_URL.startsWith('http') && SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.length > 20);
 };
 
 if (isSupabaseConfigured()) {
   try {
-    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // Fix: Assert non-null as isSupabaseConfigured checks for existence
+    supabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!);
   } catch (e) {
     console.error("Supabase Client Init Error:", e);
     isOfflineMode = true;
@@ -31,6 +32,14 @@ const LS_KEYS = {
   COMPLAINTS: 'pesh_hms_complaints',
   GATE_PASSES: 'pesh_hms_gate_passes',
   USERS: 'pesh_hms_users'
+};
+
+const DEFAULT_ADMIN: UserAccount = { 
+  identifier: 'admin', 
+  password: 'admin123', 
+  role: UserRole.SUPER_ADMIN, 
+  name: 'Super Admin', 
+  id: 'admin_001' 
 };
 
 const ls = {
@@ -56,40 +65,34 @@ export const dataStore = {
   isOffline: () => isOfflineMode,
 
   init: async () => {
-    if (isOfflineMode || !supabase) {
-      if (!localStorage.getItem(LS_KEYS.USERS)) {
-        ls.set(LS_KEYS.USERS, [{ identifier: 'admin', password: 'admin123', role: 'SUPER_ADMIN', name: 'Super Admin', id: 'admin_001' }]);
-      }
-      return;
+    // 1. ALWAYS seed local storage with default admin if it doesn't exist
+    // This provides a "safety net" if Supabase is down or empty.
+    const localUsers = ls.get<UserAccount[]>(LS_KEYS.USERS, []);
+    if (!localUsers.find(u => u.identifier === 'admin')) {
+      ls.set(LS_KEYS.USERS, [DEFAULT_ADMIN, ...localUsers]);
     }
 
+    if (isOfflineMode || !supabase) return;
+
     try {
-      // Check if tables exist by querying users
+      // 2. Check if tables exist by querying users
       const { data, error } = await supabase.from('users').select('identifier').limit(1);
       
       if (error) {
-        if (error.code === 'PGRST116' || error.message.includes('not found')) {
-          console.warn("Supabase tables not detected. Please ensure 'users', 'residents', 'billing', 'rooms', 'complaints', and 'gate_passes' tables are created in your dashboard.");
-        }
-        throw error;
+        // Table doesn't exist - we don't crash, we just let the app handle the missing table later
+        console.warn("Supabase 'users' table missing. Using local accounts fallback.");
+        return;
       }
       
+      // 3. If cloud table is empty, seed it with the default admin
       if (!data || data.length === 0) {
-        await supabase.from('users').insert({
-          identifier: 'admin',
-          password: 'admin123',
-          role: 'SUPER_ADMIN',
-          name: 'Super Admin',
-          id: 'admin_001'
-        });
+        await supabase.from('users').insert(DEFAULT_ADMIN);
       }
     } catch (e) {
-      console.warn("Supabase API check failed. Using Local Fallback.");
-      // We don't force hard offline mode here to allow retry on later calls
+      console.warn("Supabase Connection unstable. Local fallback ready.");
     }
   },
 
-  // Properly hit Supabase Storage API
   uploadBlob: async (base64Data: string): Promise<string> => {
     if (isOfflineMode || !supabase || !base64Data.startsWith('data:')) return base64Data;
 
@@ -97,7 +100,6 @@ export const dataStore = {
       const { blob, mime } = base64ToBlob(base64Data);
       const fileName = `profiles/${Date.now()}_${Math.random().toString(36).substring(7)}.png`;
       
-      // Attempt upload to 'hms_assets' bucket
       const { data, error } = await supabase.storage
         .from('hms_assets')
         .upload(fileName, blob, {
@@ -111,7 +113,7 @@ export const dataStore = {
       return publicUrl;
     } catch (e) {
       console.error("Supabase Storage Upload Failed:", e);
-      return base64Data; // Fallback to base64 if storage fails
+      return base64Data;
     }
   },
 
@@ -123,6 +125,26 @@ export const dataStore = {
       return (data || []).map(r => ({ ...r, dues: Number(r.dues), profileImage: r.profileImageUrl }));
     } catch (e) {
       return ls.get(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
+    }
+  },
+
+  getUsers: async (): Promise<UserAccount[]> => {
+    const localUsers = ls.get<UserAccount[]>(LS_KEYS.USERS, [DEFAULT_ADMIN]);
+    
+    if (isOfflineMode || !supabase) return localUsers;
+    
+    try {
+      const { data, error } = await supabase.from('users').select('*');
+      if (error) throw error;
+      
+      const cloudUsers = data || [];
+      // Ensure admin is in the list if cloud is empty
+      if (cloudUsers.length === 0) return localUsers;
+      
+      return cloudUsers;
+    } catch (e) {
+      // Fallback to local storage if cloud table is missing
+      return localUsers;
     }
   },
 
@@ -158,44 +180,44 @@ export const dataStore = {
       id: res.id
     };
 
-    if (isOfflineMode || !supabase) {
-      const residents = ls.get<Resident[]>(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
-      ls.set(LS_KEYS.RESIDENTS, [{ ...res, profileImage: profileImageUrl }, ...residents]);
-      const users = ls.get<any[]>(LS_KEYS.USERS, []);
-      ls.set(LS_KEYS.USERS, [...users, userData]);
-      return;
-    }
+    // Update Local First
+    const residents = ls.get<Resident[]>(LS_KEYS.RESIDENTS, []);
+    ls.set(LS_KEYS.RESIDENTS, [{ ...res, profileImage: profileImageUrl }, ...residents]);
+    const users = ls.get<UserAccount[]>(LS_KEYS.USERS, []);
+    ls.set(LS_KEYS.USERS, [...users, userData]);
 
-    const { error: resError } = await supabase.from('residents').insert(residentData);
-    if (resError) console.error("DB Insert Error (Resident):", resError);
-    
-    const { error: userError } = await supabase.from('users').insert(userData);
-    if (userError) console.error("DB Insert Error (User):", userError);
+    if (!isOfflineMode && supabase) {
+      try {
+        await supabase.from('residents').insert(residentData);
+        await supabase.from('users').insert(userData);
+      } catch (err) {
+        console.error("Cloud insertion failed, data kept in local cache.");
+      }
+    }
   },
 
-  // Added deleteResident method to handle resident and user deletion
   deleteResident: async (id: string) => {
-    if (isOfflineMode || !supabase) {
-      const residents = ls.get<Resident[]>(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
-      ls.set(LS_KEYS.RESIDENTS, residents.filter(r => r.id !== id));
-      const users = ls.get<any[]>(LS_KEYS.USERS, []);
-      ls.set(LS_KEYS.USERS, users.filter(u => u.id !== id));
-      return;
+    const residents = ls.get<Resident[]>(LS_KEYS.RESIDENTS, []);
+    ls.set(LS_KEYS.RESIDENTS, residents.filter(r => r.id !== id));
+    const users = ls.get<UserAccount[]>(LS_KEYS.USERS, []);
+    ls.set(LS_KEYS.USERS, users.filter(u => u.id !== id));
+
+    if (!isOfflineMode && supabase) {
+      await supabase.from('residents').delete().eq('id', id);
+      await supabase.from('users').delete().eq('id', id);
     }
-    await supabase.from('residents').delete().eq('id', id);
-    await supabase.from('users').delete().eq('id', id);
   },
 
   updateCredentials: async (residentId: string, login: { identifier: string, password: string }) => {
-    if (isOfflineMode || !supabase) {
-      const users = ls.get<any[]>(LS_KEYS.USERS, []);
-      ls.set(LS_KEYS.USERS, users.map(u => u.id === residentId ? { ...u, identifier: login.identifier, password: login.password } : u));
-      return;
+    const users = ls.get<UserAccount[]>(LS_KEYS.USERS, []);
+    ls.set(LS_KEYS.USERS, users.map(u => u.id === residentId ? { ...u, identifier: login.identifier, password: login.password } : u));
+
+    if (!isOfflineMode && supabase) {
+      await supabase.from('users').update({
+        identifier: login.identifier,
+        password: login.password
+      }).eq('id', residentId);
     }
-    await supabase.from('users').update({
-      identifier: login.identifier,
-      password: login.password
-    }).eq('id', residentId);
   },
 
   getRooms: async (): Promise<Room[]> => {
@@ -210,9 +232,11 @@ export const dataStore = {
   },
 
   setRooms: async (rooms: Room[]) => {
-    if (isOfflineMode || !supabase) { ls.set(LS_KEYS.ROOMS, rooms); return; }
-    await supabase.from('rooms').delete().neq('id', 'void');
-    await supabase.from('rooms').insert(rooms.map(r => ({ ...r, features: JSON.stringify(r.features) })));
+    ls.set(LS_KEYS.ROOMS, rooms);
+    if (!isOfflineMode && supabase) {
+      await supabase.from('rooms').delete().neq('id', 'void');
+      await supabase.from('rooms').insert(rooms.map(r => ({ ...r, features: JSON.stringify(r.features) })));
+    }
   },
 
   getBilling: async (): Promise<BillingRecord[]> => {
@@ -223,17 +247,6 @@ export const dataStore = {
       return data || [];
     } catch (e) {
       return ls.get(LS_KEYS.BILLING, MOCK_BILLING);
-    }
-  },
-
-  getUsers: async () => {
-    if (isOfflineMode || !supabase) return ls.get(LS_KEYS.USERS, []);
-    try {
-      const { data, error } = await supabase.from('users').select('*');
-      if (error) throw error;
-      return data || [];
-    } catch (e) {
-      return ls.get(LS_KEYS.USERS, []);
     }
   },
 
@@ -260,9 +273,11 @@ export const dataStore = {
   },
 
   setGatePasses: async (passes: GatePass[]) => {
-    if (isOfflineMode || !supabase) { ls.set(LS_KEYS.GATE_PASSES, passes); return; }
-    await supabase.from('gate_passes').delete().neq('id', 'void');
-    await supabase.from('gate_passes').insert(passes);
+    ls.set(LS_KEYS.GATE_PASSES, passes);
+    if (!isOfflineMode && supabase) {
+      await supabase.from('gate_passes').delete().neq('id', 'void');
+      await supabase.from('gate_passes').insert(passes);
+    }
   },
 
   exportAllData: async () => {
@@ -278,51 +293,44 @@ export const dataStore = {
 
   importAllData: async (json: string) => {
     const data = JSON.parse(json);
-    if (isOfflineMode || !supabase) {
-      if (data.residents) ls.set(LS_KEYS.RESIDENTS, data.residents);
-      if (data.rooms) ls.set(LS_KEYS.ROOMS, data.rooms);
-      if (data.billing) ls.set(LS_KEYS.BILLING, data.billing);
-      if (data.complaints) ls.set(LS_KEYS.COMPLAINTS, data.complaints);
-      if (data.gate_passes) ls.set(LS_KEYS.GATE_PASSES, data.gate_passes);
-      if (data.users) ls.set(LS_KEYS.USERS, data.users);
-      return;
-    }
-    
-    await dataStore.wipeAllData();
-    
-    if (data.residents) {
-      const residents = data.residents.map((r: any) => ({
-        id: r.id, name: r.name, cnic: r.cnic, phone: r.phone, email: r.email,
-        parentName: r.parentName, parentPhone: r.parentPhone, type: r.type,
-        institutionOrOffice: r.institutionOrOffice, roomNumber: r.roomNumber,
-        status: r.status, admissionDate: r.admissionDate, dues: r.dues,
-        profileImageUrl: r.profileImageUrl || r.profileImage,
-        permanentAddress: r.permanentAddress, currentAddress: r.currentAddress,
-        emergencyContactName: r.emergencyContactName, emergencyContactPhone: r.emergencyContactPhone
-      }));
-      await supabase.from('residents').insert(residents);
-    }
-    if (data.rooms) await dataStore.setRooms(data.rooms);
-    if (data.billing) await supabase.from('billing').insert(data.billing);
-    if (data.complaints) await supabase.from('complaints').insert(data.complaints);
-    if (data.gate_passes) await dataStore.setGatePasses(data.gate_passes);
-    if (data.users) {
-      const usersToImport = data.users.filter((u: any) => u.identifier !== 'admin');
-      await supabase.from('users').insert(usersToImport);
+    if (data.residents) ls.set(LS_KEYS.RESIDENTS, data.residents);
+    if (data.rooms) ls.set(LS_KEYS.ROOMS, data.rooms);
+    if (data.billing) ls.set(LS_KEYS.BILLING, data.billing);
+    if (data.complaints) ls.set(LS_KEYS.COMPLAINTS, data.complaints);
+    if (data.gate_passes) ls.set(LS_KEYS.GATE_PASSES, data.gate_passes);
+    if (data.users) ls.set(LS_KEYS.USERS, data.users);
+
+    if (!isOfflineMode && supabase) {
+      await dataStore.wipeAllData();
+      if (data.residents) {
+        const residents = data.residents.map((r: any) => ({
+          id: r.id, name: r.name, cnic: r.cnic, phone: r.phone, email: r.email,
+          parentName: r.parentName, parentPhone: r.parentPhone, type: r.type,
+          institutionOrOffice: r.institutionOrOffice, roomNumber: r.roomNumber,
+          status: r.status, admissionDate: r.admissionDate, dues: r.dues,
+          profile_image_url: r.profileImageUrl || r.profileImage
+        }));
+        await supabase.from('residents').insert(residents);
+      }
+      if (data.users) {
+        const usersToImport = data.users.filter((u: any) => u.identifier !== 'admin');
+        await supabase.from('users').insert(usersToImport);
+      }
     }
   },
 
   wipeAllData: async () => {
-    if (isOfflineMode || !supabase) {
-      Object.values(LS_KEYS).forEach(k => localStorage.removeItem(k));
-      return;
+    Object.values(LS_KEYS).forEach(k => localStorage.removeItem(k));
+    ls.set(LS_KEYS.USERS, [DEFAULT_ADMIN]);
+
+    if (!isOfflineMode && supabase) {
+      await supabase.from('residents').delete().neq('id', 'void');
+      await supabase.from('rooms').delete().neq('id', 'void');
+      await supabase.from('billing').delete().neq('id', 'void');
+      await supabase.from('complaints').delete().neq('id', 'void');
+      await supabase.from('gate_passes').delete().neq('id', 'void');
+      await supabase.from('users').delete().neq('role', 'SUPER_ADMIN');
     }
-    await supabase.from('residents').delete().neq('id', 'void');
-    await supabase.from('rooms').delete().neq('id', 'void');
-    await supabase.from('billing').delete().neq('id', 'void');
-    await supabase.from('complaints').delete().neq('id', 'void');
-    await supabase.from('gate_passes').delete().neq('id', 'void');
-    await supabase.from('users').delete().neq('role', 'SUPER_ADMIN');
   },
 
   resetToDefaults: async () => {
