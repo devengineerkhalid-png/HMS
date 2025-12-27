@@ -1,24 +1,23 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { put } from '@vercel/blob';
 import { Resident, BillingRecord, Room, Complaint, GatePass, UserRole, UserAccount } from '../types';
 import { MOCK_RESIDENTS, MOCK_BILLING, MOCK_COMPLAINTS } from '../constants';
 
 const SUPABASE_URL = (process.env as any).SUPABASE_URL;
 const SUPABASE_ANON_KEY = (process.env as any).SUPABASE_ANON_KEY;
-const BLOB_TOKEN = (process.env as any).BLOB_READ_WRITE_TOKEN;
 
 let supabase: SupabaseClient | null = null;
 let isOfflineMode = false;
 
 const isSupabaseConfigured = () => {
-  return SUPABASE_URL && SUPABASE_URL !== "" && SUPABASE_ANON_KEY && SUPABASE_ANON_KEY !== "";
+  return SUPABASE_URL && SUPABASE_URL.startsWith('http') && SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.length > 20;
 };
 
 if (isSupabaseConfigured()) {
   try {
     supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   } catch (e) {
+    console.error("Supabase Client Init Error:", e);
     isOfflineMode = true;
   }
 } else {
@@ -44,13 +43,13 @@ const ls = {
   }
 };
 
-function base64ToBlob(base64: string): Blob {
+function base64ToBlob(base64: string): { blob: Blob, mime: string } {
   const parts = base64.split(';base64,');
-  const contentType = parts[0].split(':')[1];
+  const mime = parts[0].split(':')[1];
   const raw = window.atob(parts[1]);
   const uInt8Array = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; ++i) uInt8Array[i] = raw.charCodeAt(i);
-  return new Blob([uInt8Array], { type: contentType });
+  return { blob: new Blob([uInt8Array], { type: mime }), mime };
 }
 
 export const dataStore = {
@@ -65,12 +64,17 @@ export const dataStore = {
     }
 
     try {
-      // Test connectivity
+      // Check if tables exist by querying users
       const { data, error } = await supabase.from('users').select('identifier').limit(1);
-      if (error) throw error;
+      
+      if (error) {
+        if (error.code === 'PGRST116' || error.message.includes('not found')) {
+          console.warn("Supabase tables not detected. Please ensure 'users', 'residents', 'billing', 'rooms', 'complaints', and 'gate_passes' tables are created in your dashboard.");
+        }
+        throw error;
+      }
       
       if (!data || data.length === 0) {
-        // Seed first admin if no users exist
         await supabase.from('users').insert({
           identifier: 'admin',
           password: 'admin123',
@@ -80,32 +84,50 @@ export const dataStore = {
         });
       }
     } catch (e) {
-      console.warn("Supabase connectivity issue. Using Local Storage fallback.");
-      isOfflineMode = true;
+      console.warn("Supabase API check failed. Using Local Fallback.");
+      // We don't force hard offline mode here to allow retry on later calls
     }
   },
 
+  // Properly hit Supabase Storage API
   uploadBlob: async (base64Data: string): Promise<string> => {
-    if (!BLOB_TOKEN || BLOB_TOKEN === "") return base64Data;
+    if (isOfflineMode || !supabase || !base64Data.startsWith('data:')) return base64Data;
+
     try {
-      const blob = base64ToBlob(base64Data);
-      const { url } = await put(`res_${Date.now()}.png`, blob, { access: 'public', token: BLOB_TOKEN });
-      return url;
-    } catch (e) { return base64Data; }
+      const { blob, mime } = base64ToBlob(base64Data);
+      const fileName = `profiles/${Date.now()}_${Math.random().toString(36).substring(7)}.png`;
+      
+      // Attempt upload to 'hms_assets' bucket
+      const { data, error } = await supabase.storage
+        .from('hms_assets')
+        .upload(fileName, blob, {
+          contentType: mime,
+          upsert: true
+        });
+
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage.from('hms_assets').getPublicUrl(data.path);
+      return publicUrl;
+    } catch (e) {
+      console.error("Supabase Storage Upload Failed:", e);
+      return base64Data; // Fallback to base64 if storage fails
+    }
   },
 
   getResidents: async (): Promise<Resident[]> => {
     if (isOfflineMode || !supabase) return ls.get(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
-    const { data, error } = await supabase.from('residents').select('*').order('admissionDate', { ascending: false });
-    if (error) return ls.get(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
-    return (data || []).map(r => ({ ...r, dues: Number(r.dues), profileImage: r.profileImageUrl }));
+    try {
+      const { data, error } = await supabase.from('residents').select('*').order('admissionDate', { ascending: false });
+      if (error) throw error;
+      return (data || []).map(r => ({ ...r, dues: Number(r.dues), profileImage: r.profileImageUrl }));
+    } catch (e) {
+      return ls.get(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
+    }
   },
 
   addResident: async (res: Resident, login?: { identifier: string, password: string }) => {
-    let profileImageUrl = res.profileImage;
-    if (res.profileImage && res.profileImage.startsWith('data:')) {
-      profileImageUrl = await dataStore.uploadBlob(res.profileImage);
-    }
+    const profileImageUrl = await dataStore.uploadBlob(res.profileImage || '');
 
     const residentData = {
       id: res.id,
@@ -144,8 +166,24 @@ export const dataStore = {
       return;
     }
 
-    await supabase.from('residents').insert(residentData);
-    await supabase.from('users').insert(userData);
+    const { error: resError } = await supabase.from('residents').insert(residentData);
+    if (resError) console.error("DB Insert Error (Resident):", resError);
+    
+    const { error: userError } = await supabase.from('users').insert(userData);
+    if (userError) console.error("DB Insert Error (User):", userError);
+  },
+
+  // Added deleteResident method to handle resident and user deletion
+  deleteResident: async (id: string) => {
+    if (isOfflineMode || !supabase) {
+      const residents = ls.get<Resident[]>(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
+      ls.set(LS_KEYS.RESIDENTS, residents.filter(r => r.id !== id));
+      const users = ls.get<any[]>(LS_KEYS.USERS, []);
+      ls.set(LS_KEYS.USERS, users.filter(u => u.id !== id));
+      return;
+    }
+    await supabase.from('residents').delete().eq('id', id);
+    await supabase.from('users').delete().eq('id', id);
   },
 
   updateCredentials: async (residentId: string, login: { identifier: string, password: string }) => {
@@ -160,40 +198,15 @@ export const dataStore = {
     }).eq('id', residentId);
   },
 
-  updateResident: async (id: string, updates: Partial<Resident>) => {
-    let profileImageUrl = updates.profileImage;
-    if (updates.profileImage && updates.profileImage.startsWith('data:')) {
-      profileImageUrl = await dataStore.uploadBlob(updates.profileImage);
-    }
-
-    const supabaseUpdates: any = { ...updates };
-    delete supabaseUpdates.profileImage;
-    if (profileImageUrl) supabaseUpdates.profileImageUrl = profileImageUrl;
-
-    if (isOfflineMode || !supabase) {
-      const data = ls.get<Resident[]>(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
-      ls.set(LS_KEYS.RESIDENTS, data.map(r => r.id === id ? { ...r, ...updates, profileImage: profileImageUrl || r.profileImage } : r));
-      return;
-    }
-
-    await supabase.from('residents').update(supabaseUpdates).eq('id', id);
-  },
-
-  deleteResident: async (id: string) => {
-    if (isOfflineMode || !supabase) {
-      ls.set(LS_KEYS.RESIDENTS, ls.get<Resident[]>(LS_KEYS.RESIDENTS, []).filter(r => r.id !== id));
-      ls.set(LS_KEYS.USERS, ls.get<any[]>(LS_KEYS.USERS, []).filter(u => u.id !== id));
-      return;
-    }
-    await supabase.from('residents').delete().eq('id', id);
-    await supabase.from('users').delete().eq('id', id);
-  },
-
   getRooms: async (): Promise<Room[]> => {
     if (isOfflineMode || !supabase) return ls.get(LS_KEYS.ROOMS, []);
-    const { data, error } = await supabase.from('rooms').select('*');
-    if (error) return ls.get(LS_KEYS.ROOMS, []);
-    return (data || []).map(r => ({ ...r, features: typeof r.features === 'string' ? JSON.parse(r.features) : r.features }));
+    try {
+      const { data, error } = await supabase.from('rooms').select('*');
+      if (error) throw error;
+      return (data || []).map(r => ({ ...r, features: typeof r.features === 'string' ? JSON.parse(r.features) : r.features }));
+    } catch (e) {
+      return ls.get(LS_KEYS.ROOMS, []);
+    }
   },
 
   setRooms: async (rooms: Room[]) => {
@@ -204,38 +217,46 @@ export const dataStore = {
 
   getBilling: async (): Promise<BillingRecord[]> => {
     if (isOfflineMode || !supabase) return ls.get(LS_KEYS.BILLING, MOCK_BILLING);
-    const { data, error } = await supabase.from('billing').select('*');
-    if (error) return ls.get(LS_KEYS.BILLING, MOCK_BILLING);
-    return data || [];
+    try {
+      const { data, error } = await supabase.from('billing').select('*');
+      if (error) throw error;
+      return data || [];
+    } catch (e) {
+      return ls.get(LS_KEYS.BILLING, MOCK_BILLING);
+    }
   },
 
   getUsers: async () => {
     if (isOfflineMode || !supabase) return ls.get(LS_KEYS.USERS, []);
-    const { data, error } = await supabase.from('users').select('*');
-    if (error) return ls.get(LS_KEYS.USERS, []);
-    return data || [];
-  },
-
-  addUser: async (user: any) => {
-    if (isOfflineMode || !supabase) {
-      ls.set(LS_KEYS.USERS, [...ls.get<any[]>(LS_KEYS.USERS, []), user]);
-      return;
+    try {
+      const { data, error } = await supabase.from('users').select('*');
+      if (error) throw error;
+      return data || [];
+    } catch (e) {
+      return ls.get(LS_KEYS.USERS, []);
     }
-    await supabase.from('users').insert(user);
   },
 
   getComplaints: async (): Promise<Complaint[]> => {
     if (isOfflineMode || !supabase) return ls.get(LS_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
-    const { data, error } = await supabase.from('complaints').select('*').order('createdAt', { ascending: false });
-    if (error) return ls.get(LS_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
-    return data || [];
+    try {
+      const { data, error } = await supabase.from('complaints').select('*').order('createdAt', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } catch (e) {
+      return ls.get(LS_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    }
   },
 
   getGatePasses: async (): Promise<GatePass[]> => {
     if (isOfflineMode || !supabase) return ls.get(LS_KEYS.GATE_PASSES, []);
-    const { data, error } = await supabase.from('gate_passes').select('*').order('departureDate', { ascending: false });
-    if (error) return ls.get(LS_KEYS.GATE_PASSES, []);
-    return data || [];
+    try {
+      const { data, error } = await supabase.from('gate_passes').select('*').order('departureDate', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } catch (e) {
+      return ls.get(LS_KEYS.GATE_PASSES, []);
+    }
   },
 
   setGatePasses: async (passes: GatePass[]) => {
@@ -286,7 +307,6 @@ export const dataStore = {
     if (data.complaints) await supabase.from('complaints').insert(data.complaints);
     if (data.gate_passes) await dataStore.setGatePasses(data.gate_passes);
     if (data.users) {
-      // Filter out existing super admin to avoid conflict
       const usersToImport = data.users.filter((u: any) => u.identifier !== 'admin');
       await supabase.from('users').insert(usersToImport);
     }

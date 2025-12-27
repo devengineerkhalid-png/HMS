@@ -59,7 +59,7 @@ const App: React.FC = () => {
         <div className="flex flex-col items-center gap-4 text-center">
           <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin shadow-2xl shadow-emerald-500/20"></div>
           <p className="text-emerald-500 font-black tracking-widest text-[10px] uppercase mt-4">Peshawar Cloud Node Syncing...</p>
-          <p className="text-slate-500 text-[8px] font-bold uppercase">Connecting to Supabase Cloud Engine</p>
+          <p className="text-slate-500 text-[8px] font-bold uppercase">Connecting to Supabase API & Storage</p>
         </div>
       </div>
     );
@@ -124,7 +124,7 @@ const App: React.FC = () => {
                  </span>
                  <div className={`flex items-center gap-2 px-3 py-1 rounded-full border text-[9px] font-black uppercase tracking-tighter ${!isOffline ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-amber-50 border-amber-100 text-amber-600'}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${!isOffline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
-                    {isOffline ? 'LOCAL STORAGE' : 'SUPABASE CLOUD'}
+                    {isOffline ? 'LOCAL CACHE' : 'SUPABASE ENGINE'}
                  </div>
               </div>
             </div>
