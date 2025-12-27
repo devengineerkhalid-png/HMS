@@ -1,102 +1,225 @@
 
-import React, { useState } from 'react';
-import { MOCK_RESIDENTS } from '../constants';
-import { ResidentType } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Resident, ResidentType, Room } from '../types';
+import { dataStore } from '../services/dataStore';
 
 const ResidentsView: React.FC = () => {
-  const [filter, setFilter] = useState<'ALL' | ResidentType>('ALL');
+  const [viewMode, setViewMode] = useState<'RESIDENTS' | 'ROOMS'>('RESIDENTS');
+  const [residents, setResidents] = useState<Resident[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeModal, setActiveModal] = useState<'ADD_RES' | 'EDIT_RES' | 'ADD_ROOM' | 'DELETE_RES' | null>(null);
+  const [selectedEntity, setSelectedEntity] = useState<any>(null);
+  const [formData, setFormData] = useState<any>({});
 
-  const filtered = MOCK_RESIDENTS.filter(r => {
-    const matchesSearch = r.name.toLowerCase().includes(searchTerm.toLowerCase()) || r.cnic.includes(searchTerm);
-    const matchesType = filter === 'ALL' || r.type === filter;
-    return matchesSearch && matchesType;
-  });
+  useEffect(() => {
+    setResidents(dataStore.getResidents());
+    setRooms(dataStore.getRooms());
+  }, []);
+
+  const handleOpenAddRes = () => {
+    setFormData({ 
+      name: '', 
+      cnic: '', 
+      phone: '', 
+      parentName: '', 
+      parentPhone: '', 
+      type: ResidentType.STUDENT, 
+      institutionOrOffice: '',
+      roomNumber: '',
+      status: 'ACTIVE', 
+      admissionDate: new Date().toISOString().split('T')[0], 
+      dues: 0 
+    });
+    setActiveModal('ADD_RES');
+  };
+
+  const saveResident = (e: React.FormEvent) => {
+    e.preventDefault();
+    const newRes = { ...formData, id: `res_${Date.now()}` } as Resident;
+    const updated = [newRes, ...residents];
+    setResidents(updated);
+    dataStore.setResidents(updated);
+    
+    // Update room occupancy if assigned
+    if (formData.roomNumber) {
+      const roomUpdate = rooms.map(rm => rm.number === formData.roomNumber 
+        ? { ...rm, currentOccupancy: rm.currentOccupancy + 1, status: rm.currentOccupancy + 1 >= rm.capacity ? 'OCCUPIED' : 'AVAILABLE' } as Room 
+        : rm
+      );
+      setRooms(roomUpdate);
+      dataStore.setRooms(roomUpdate);
+    }
+    
+    setActiveModal(null);
+  };
+
+  const deleteResident = (id: string) => {
+    const updated = residents.filter(r => r.id !== id);
+    setResidents(updated);
+    dataStore.setResidents(updated);
+  };
+
+  const saveRoom = (e: React.FormEvent) => {
+    e.preventDefault();
+    const newRoom = { ...formData, id: `rm_${Date.now()}`, currentOccupancy: 0 } as Room;
+    const updated = [newRoom, ...rooms];
+    setRooms(updated);
+    dataStore.setRooms(updated);
+    setActiveModal(null);
+  };
+
+  const filteredResidents = residents.filter(r => 
+    r.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    r.cnic.includes(searchTerm)
+  );
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <h2 className="text-2xl font-bold text-slate-800">Resident Directory</h2>
-        <div className="flex flex-wrap gap-2">
-           <div className="relative">
-              <i className="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400"></i>
-              <input 
-                type="text" 
-                placeholder="Search Name or CNIC..." 
-                className="pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm w-64 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-           </div>
-           <select 
-             className="border border-slate-200 px-4 py-2 rounded-lg text-sm focus:outline-none"
-             value={filter}
-             onChange={(e) => setFilter(e.target.value as any)}
-           >
-             <option value="ALL">All Profiles</option>
-             <option value={ResidentType.STUDENT}>Students Only</option>
-             <option value={ResidentType.EMPLOYEE}>Working Professionals</option>
-           </select>
+        <div>
+          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Management Directory</h2>
+          <p className="text-sm text-slate-500 font-medium">Full control over residents and accommodation inventory.</p>
+        </div>
+        
+        <div className="flex bg-white rounded-2xl p-1 shadow-sm border border-slate-100">
+          <button onClick={() => setViewMode('RESIDENTS')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'RESIDENTS' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}>Residents</button>
+          <button onClick={() => setViewMode('ROOMS')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'ROOMS' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400'}`}>Rooms</button>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-            <tr>
-              <th className="px-6 py-4 font-semibold">Resident</th>
-              <th className="px-6 py-4 font-semibold">Type</th>
-              <th className="px-6 py-4 font-semibold">Room</th>
-              <th className="px-6 py-4 font-semibold">Institution/Office</th>
-              <th className="px-6 py-4 font-semibold">Status</th>
-              <th className="px-6 py-4 font-semibold text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filtered.map((resident) => (
-              <tr key={resident.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
-                      {resident.name.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-slate-900">{resident.name}</p>
-                      <p className="text-xs text-slate-500">{resident.cnic}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
-                    resident.type === ResidentType.STUDENT ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
-                  }`}>
-                    {resident.type}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-sm font-medium text-slate-700">{resident.roomNumber}</td>
-                <td className="px-6 py-4 text-sm text-slate-500">{resident.institutionOrOffice}</td>
-                <td className="px-6 py-4">
-                  <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    {resident.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-right space-x-2">
-                  <button className="text-slate-400 hover:text-emerald-600 transition-colors"><i className="fa-solid fa-eye"></i></button>
-                  <button className="text-slate-400 hover:text-blue-600 transition-colors"><i className="fa-solid fa-pen-to-square"></i></button>
-                  <button className="text-slate-400 hover:text-red-600 transition-colors"><i className="fa-solid fa-trash"></i></button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {filtered.length === 0 && (
-          <div className="p-10 text-center text-slate-400">
-            <i className="fa-solid fa-user-slash text-4xl mb-3"></i>
-            <p>No residents found matching your criteria.</p>
-          </div>
-        )}
+      <div className="flex justify-between items-center bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
+        <div className="relative group flex-1 max-w-md">
+          <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500"></i>
+          <input 
+            type="text" 
+            placeholder={viewMode === 'RESIDENTS' ? "Name or CNIC..." : "Room Number..."} 
+            className="w-full pl-12 pr-6 py-3 bg-slate-50 border border-slate-50 rounded-2xl text-sm focus:outline-none focus:border-emerald-500 transition-all font-bold"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        <button 
+          onClick={viewMode === 'RESIDENTS' ? handleOpenAddRes : () => { setFormData({ number: '', type: 'AC_2', features: [], status: 'AVAILABLE', capacity: 2 }); setActiveModal('ADD_ROOM'); }}
+          className="bg-slate-900 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 flex items-center gap-2"
+        >
+          <i className="fa-solid fa-plus"></i> {viewMode === 'RESIDENTS' ? 'Add Resident' : 'Add Room'}
+        </button>
       </div>
+
+      {viewMode === 'RESIDENTS' ? (
+        <div className="bg-white rounded-[32px] shadow-sm border border-slate-100 overflow-hidden">
+          <table className="w-full text-left">
+            <thead className="bg-slate-50/50 text-slate-500 text-[10px] uppercase font-black tracking-widest border-b border-slate-100">
+              <tr>
+                <th className="px-8 py-5">Profile</th>
+                <th className="px-8 py-5">Room</th>
+                <th className="px-8 py-5">Dues</th>
+                <th className="px-8 py-5">Status</th>
+                <th className="px-8 py-5 text-right">Control</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredResidents.map(r => (
+                <tr key={r.id} className="hover:bg-slate-50 transition-all group">
+                  <td className="px-8 py-5">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black">{r.name.charAt(0)}</div>
+                      <div>
+                        <p className="font-black text-slate-900 leading-none mb-1">{r.name}</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">{r.cnic}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-8 py-5 text-sm font-bold text-slate-700">{r.roomNumber || 'Unassigned'}</td>
+                  <td className="px-8 py-5 text-sm font-black text-red-500">Rs. {r.dues.toLocaleString()}</td>
+                  <td className="px-8 py-5">
+                    <span className="text-[9px] font-black uppercase px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600">{r.status}</span>
+                  </td>
+                  <td className="px-8 py-5 text-right">
+                    <button onClick={() => deleteResident(r.id)} className="text-slate-300 hover:text-red-500 transition-all"><i className="fa-solid fa-trash-can"></i></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filteredResidents.length === 0 && <div className="p-20 text-center text-slate-400 font-black text-xs uppercase">No Residents Found</div>}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {rooms.map(room => (
+            <div key={room.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm group">
+              <div className="flex justify-between mb-4">
+                <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${room.status === 'AVAILABLE' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}>{room.status}</span>
+                <i className="fa-solid fa-door-open text-slate-100 text-2xl"></i>
+              </div>
+              <h3 className="text-2xl font-black text-slate-900">Room {room.number}</h3>
+              <p className="text-[10px] font-black text-slate-400 uppercase mt-1">{room.type}</p>
+              <div className="mt-6 pt-6 border-t border-slate-50 flex justify-between items-center">
+                 <span className="text-xs font-bold text-slate-600">{room.currentOccupancy} / {room.capacity} Beds</span>
+                 <button className="text-[9px] font-black text-emerald-600 uppercase">View Log</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add Resident Modal */}
+      {activeModal === 'ADD_RES' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4">
+          <form onSubmit={saveResident} className="bg-white w-full max-w-2xl rounded-[48px] shadow-2xl p-10 animate-in zoom-in">
+             <h3 className="text-2xl font-black text-slate-900 mb-8">New Admission Enrollment</h3>
+             <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Full Legal Name</label>
+                  <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none focus:bg-white border focus:border-emerald-500" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">CNIC (17301-...)</label>
+                  <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none focus:bg-white border focus:border-emerald-500" value={formData.cnic} onChange={e => setFormData({...formData, cnic: e.target.value})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Assigned Room</label>
+                  <select className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.roomNumber} onChange={e => setFormData({...formData, roomNumber: e.target.value})}>
+                    <option value="">Select Room</option>
+                    {rooms.filter(r => r.status !== 'OCCUPIED').map(r => <option key={r.id} value={r.number}>{r.number} ({r.currentOccupancy}/{r.capacity})</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Mobile Contact</label>
+                  <input required className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold outline-none border" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                </div>
+             </div>
+             <div className="mt-8 flex gap-4">
+                <button type="button" onClick={() => setActiveModal(null)} className="flex-1 py-4 bg-slate-100 rounded-2xl font-black text-[10px] uppercase">Cancel</button>
+                <button type="submit" className="flex-[2] py-4 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl shadow-emerald-500/20">Authorize Admission</button>
+             </div>
+          </form>
+        </div>
+      )}
+
+      {/* Add Room Modal */}
+      {activeModal === 'ADD_ROOM' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4">
+          <form onSubmit={saveRoom} className="bg-white w-full max-w-md rounded-[48px] shadow-2xl p-10 animate-in zoom-in">
+             <h3 className="text-2xl font-black text-slate-900 mb-8">Register Room Inventory</h3>
+             <div className="space-y-6">
+                <input required placeholder="Room Number (e.g. 405-C)" className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold border" onChange={e => setFormData({...formData, number: e.target.value})} />
+                <select className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold border" onChange={e => setFormData({...formData, type: e.target.value as any})}>
+                  <option value="AC_2">AC - 2 Seater</option>
+                  <option value="AC_3">AC - 3 Seater</option>
+                  <option value="NON_AC_2">Non-AC - 2 Seater</option>
+                  <option value="NON_AC_3">Non-AC - 3 Seater</option>
+                </select>
+                <input required type="number" placeholder="Total Bed Capacity" className="w-full bg-slate-50 p-4 rounded-2xl text-sm font-bold border" onChange={e => setFormData({...formData, capacity: Number(e.target.value)})} />
+             </div>
+             <div className="mt-8 flex gap-4">
+                <button type="button" onClick={() => setActiveModal(null)} className="flex-1 py-4 bg-slate-100 rounded-2xl font-black text-[10px] uppercase">Discard</button>
+                <button type="submit" className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl">Confirm Room</button>
+             </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

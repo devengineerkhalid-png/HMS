@@ -5,145 +5,98 @@ import StatCard from '../components/StatCard';
 
 interface BillingViewProps {
   residentMode?: boolean;
+  residentId?: string;
 }
 
-const BillingView: React.FC<BillingViewProps> = ({ residentMode }) => {
-  const [activeTab, setActiveTab] = useState<'REVENUE' | 'EXPENSES' | 'PAYMENTS'>('REVENUE');
-  const [showPayModal, setShowPayModal] = useState(false);
-  const [selectedBill, setSelectedBill] = useState<any>(null);
+const BillingView: React.FC<BillingViewProps> = ({ residentMode, residentId }) => {
+  const [activeTab, setActiveTab] = useState<'REVENUE' | 'EXPENSES'>('REVENUE');
+  const [showModal, setShowModal] = useState<'INVOICE' | 'EXPENSE' | null>(null);
 
-  const myBills = residentMode ? MOCK_BILLING.filter(b => b.residentId === '1') : MOCK_BILLING;
-  const totalRevenue = myBills.filter(b => b.status === 'PAID').reduce((a, b) => a + b.amount, 0);
-  const totalUnpaid = myBills.filter(b => b.status === 'UNPAID').reduce((a, b) => a + b.amount, 0);
+  const totalRevenue = MOCK_BILLING.filter(b => b.status === 'PAID').reduce((a, b) => a + b.amount, 0);
   const totalExpense = MOCK_EXPENSES.reduce((a, b) => a + b.amount, 0);
-
-  const getResidentName = (id: string) => MOCK_RESIDENTS.find(r => r.id === id)?.name || 'Unknown';
-
-  const handlePayClick = (bill: any) => {
-    setSelectedBill(bill);
-    setShowPayModal(true);
-  };
+  const profit = totalRevenue - totalExpense;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+    <div className="space-y-6 animate-in fade-in">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-black text-slate-900">{residentMode ? 'Dues & Fees' : 'Financial Management'}</h2>
-          <p className="text-sm text-slate-500 font-medium">Clear overview of all transactions and pending dues.</p>
+          <h2 className="text-3xl font-black text-slate-900">Financial Command</h2>
+          <p className="text-sm text-slate-500 font-medium">Real-time profit/loss tracking and digital invoicing.</p>
         </div>
         {!residentMode && (
-          <div className="flex bg-white rounded-lg p-1 border border-slate-200">
-            <button 
-              onClick={() => setActiveTab('REVENUE')}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'REVENUE' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              Revenue
-            </button>
-            <button 
-              onClick={() => setActiveTab('EXPENSES')}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'EXPENSES' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              Expenses
-            </button>
+          <div className="flex gap-3">
+             <button onClick={() => setShowModal('EXPENSE')} className="bg-white border-2 border-slate-100 px-6 py-3 rounded-2xl text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50 transition-all">Record Expense</button>
+             <button onClick={() => setShowModal('INVOICE')} className="bg-slate-900 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase hover:bg-slate-800 transition-all shadow-xl">Generate Invoice</button>
           </div>
         )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <StatCard title={residentMode ? "Total Paid" : "Total Collected"} value={`Rs. ${totalRevenue.toLocaleString()}`} icon="fa-sack-dollar" color="bg-emerald-500" />
-        <StatCard title="Current Dues" value={`Rs. ${totalUnpaid.toLocaleString()}`} icon="fa-clock-rotate-left" color="bg-amber-500" />
-        <StatCard title={residentMode ? "Last Payment" : "Total Expenses"} value={residentMode ? "May 2024" : `Rs. ${totalExpense.toLocaleString()}`} icon="fa-file-invoice-dollar" color="bg-indigo-400" />
+        <StatCard title="Total Collected" value={`Rs. ${totalRevenue.toLocaleString()}`} icon="fa-hand-holding-dollar" color="bg-emerald-500" />
+        <StatCard title="Branch Expenses" value={`Rs. ${totalExpense.toLocaleString()}`} icon="fa-money-bill-transfer" color="bg-red-500" />
+        <StatCard title="Net Branch P/L" value={`Rs. ${profit.toLocaleString()}`} icon="fa-chart-line" color={profit >= 0 ? "bg-blue-600" : "bg-amber-600"} />
       </div>
 
-      <div className="bg-white rounded-[32px] shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-6 border-b border-slate-50 bg-slate-50/30">
-          <h3 className="font-black text-[10px] text-slate-400 uppercase tracking-widest">{residentMode ? 'Detailed Ledger' : 'Transaction Logs'}</h3>
+      <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 overflow-hidden">
+        <div className="flex border-b border-slate-50 bg-slate-50/50 p-2">
+           <button onClick={() => setActiveTab('REVENUE')} className={`px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'REVENUE' ? 'bg-white text-emerald-600 shadow-sm border border-slate-100' : 'text-slate-400'}`}>Revenue Stream</button>
+           <button onClick={() => setActiveTab('EXPENSES')} className={`px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'EXPENSES' ? 'bg-white text-emerald-600 shadow-sm border border-slate-100' : 'text-slate-400'}`}>Operating Expenses</button>
         </div>
+        
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-slate-50/50 text-slate-500 text-[10px] uppercase font-black tracking-widest">
-              <tr>
-                <th className="px-6 py-4">Transaction ID</th>
-                {!residentMode && <th className="px-6 py-4">Resident</th>}
-                <th className="px-6 py-4">Category</th>
-                <th className="px-6 py-4">Amount</th>
-                <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4">Due Date</th>
-                <th className="px-6 py-4 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {myBills.map((bill) => (
-                <tr key={bill.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4 font-mono text-[10px] text-slate-400">#{bill.id.toUpperCase()}</td>
-                  {!residentMode && <td className="px-6 py-4 font-bold text-slate-900">{getResidentName(bill.residentId)}</td>}
-                  <td className="px-6 py-4">
-                    <span className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-600 font-black uppercase">{bill.type}</span>
-                  </td>
-                  <td className="px-6 py-4 font-black text-slate-900">Rs. {bill.amount.toLocaleString()}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${bill.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                      {bill.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-xs font-bold text-slate-500">{bill.dueDate}</td>
-                  <td className="px-6 py-4 text-right">
-                    {bill.status === 'UNPAID' && residentMode ? (
-                      <button 
-                        onClick={() => handlePayClick(bill)}
-                        className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
-                      >
-                        Pay Now
-                      </button>
-                    ) : (
-                      <button className="text-slate-400 hover:text-emerald-600 transition-colors">
-                        <i className="fa-solid fa-receipt"></i>
-                      </button>
-                    )}
-                  </td>
+          {activeTab === 'REVENUE' ? (
+            <table className="w-full text-left">
+              <thead className="bg-slate-50/30 text-slate-500 text-[10px] uppercase font-black tracking-widest border-b border-slate-50">
+                <tr>
+                  <th className="px-8 py-5">Transaction ID</th>
+                  <th className="px-8 py-5">Resident</th>
+                  <th className="px-8 py-5">Amount</th>
+                  <th className="px-8 py-5">Status</th>
+                  <th className="px-8 py-5 text-right">Receipt</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {MOCK_BILLING.map(b => (
+                  <tr key={b.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-8 py-5 font-mono text-[10px] text-slate-400 uppercase">#{b.id}</td>
+                    <td className="px-8 py-5 font-black text-slate-700">{MOCK_RESIDENTS.find(r => r.id === b.residentId)?.name}</td>
+                    <td className="px-8 py-5 font-black text-slate-900">Rs. {b.amount.toLocaleString()}</td>
+                    <td className="px-8 py-5">
+                      <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${b.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{b.status}</span>
+                    </td>
+                    <td className="px-8 py-5 text-right">
+                      <button className="text-slate-300 hover:text-emerald-600"><i className="fa-solid fa-file-invoice"></i></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <table className="w-full text-left">
+              <thead className="bg-slate-50/30 text-slate-500 text-[10px] uppercase font-black tracking-widest border-b border-slate-50">
+                <tr>
+                  <th className="px-8 py-5">Expense Title</th>
+                  <th className="px-8 py-5">Category</th>
+                  <th className="px-8 py-5">Amount</th>
+                  <th className="px-8 py-5">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {MOCK_EXPENSES.map(e => (
+                  <tr key={e.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-8 py-5 font-black text-slate-700">{e.title}</td>
+                    <td className="px-8 py-5">
+                      <span className="text-[9px] font-black uppercase px-2 py-1 rounded-lg bg-slate-100 text-slate-600">{e.category}</span>
+                    </td>
+                    <td className="px-8 py-5 font-black text-red-500">Rs. {e.amount.toLocaleString()}</td>
+                    <td className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">{e.date}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
-
-      {showPayModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white w-full max-w-md p-8 rounded-[40px] shadow-2xl space-y-8 animate-in zoom-in duration-200">
-             <div className="text-center space-y-2">
-                <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto text-2xl">
-                    <i className="fa-solid fa-wallet"></i>
-                </div>
-                <h3 className="text-2xl font-black text-slate-900">Secure Payment</h3>
-                <p className="text-sm text-slate-500">Processing bill for <strong>{selectedBill?.type}</strong></p>
-             </div>
-
-             <div className="grid grid-cols-2 gap-4">
-                <button className="border-2 border-emerald-500 bg-emerald-50 p-4 rounded-3xl flex flex-col items-center gap-2 group transition-all">
-                  <img src="https://upload.wikimedia.org/wikipedia/commons/4/44/EasyPaisa_Logo.png" className="h-6 object-contain" alt="Easypaisa" />
-                  <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Easypaisa</span>
-                </button>
-                <button className="border-2 border-slate-100 p-4 rounded-3xl flex flex-col items-center gap-2 group hover:border-emerald-200 transition-all">
-                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Jazz_Logo.svg/1200px-Jazz_Logo.svg.png" className="h-6 object-contain grayscale opacity-50" alt="JazzCash" />
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">JazzCash</span>
-                </button>
-             </div>
-
-             <div className="space-y-4">
-                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
-                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Amount</p>
-                   <p className="text-3xl font-black text-slate-900">Rs. {selectedBill?.amount.toLocaleString()}</p>
-                </div>
-                <input type="text" placeholder="Mobile Wallet Number (03XX-XXXXXXX)" className="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-2xl outline-none focus:border-emerald-500 text-sm font-medium" />
-                <div className="flex gap-3">
-                  <button onClick={() => setShowPayModal(false)} className="flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest bg-slate-100 text-slate-500 hover:bg-slate-200 transition-all">Cancel</button>
-                  <button onClick={() => setShowPayModal(false)} className="flex-[2] py-4 rounded-2xl font-black text-xs uppercase tracking-widest bg-slate-900 text-white hover:bg-slate-800 transition-all shadow-xl shadow-slate-200">Confirm Payment</button>
-                </div>
-             </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

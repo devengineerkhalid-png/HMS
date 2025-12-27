@@ -30,22 +30,14 @@ export interface Resident {
   dues: number;
 }
 
-export interface RoomApplication {
+export interface Room {
   id: string;
-  residentId: string;
-  roomType: 'AC_2' | 'AC_3' | 'NON_AC_2' | 'NON_AC_3' | 'HALL';
-  hostelId: string;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
-  appliedDate: string;
-}
-
-export interface HostelConfig {
-  name: string;
-  branch: string;
-  city: string;
-  address: string;
-  themeColor: string;
-  logoUrl?: string;
+  number: string;
+  type: 'AC_2' | 'AC_3' | 'NON_AC_2' | 'NON_AC_3' | 'HALL';
+  features: string[];
+  status: 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE';
+  currentOccupancy: number;
+  capacity: number;
 }
 
 export interface BillingRecord {
@@ -73,9 +65,9 @@ export interface Complaint {
   category: 'PLUMBING' | 'ELECTRICAL' | 'INTERNET' | 'CLEANING' | 'OTHER';
   status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED';
   createdAt: string;
+  assignedTo?: string;
 }
 
-// Added missing GatePass interface
 export interface GatePass {
   id: string;
   residentId: string;
@@ -86,7 +78,6 @@ export interface GatePass {
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
 }
 
-// Added missing VisitorRecord interface
 export interface VisitorRecord {
   id: string;
   name: string;
@@ -97,15 +88,14 @@ export interface VisitorRecord {
   checkOutTime?: string;
 }
 
-// Added missing InventoryItem interface
 export interface InventoryItem {
   id: string;
   name: string;
   quantity: number;
   unit: string;
+  lastUpdated: string;
 }
 
-// Added missing MealPlan interface
 export interface MealPlan {
   day: string;
   breakfast: string;

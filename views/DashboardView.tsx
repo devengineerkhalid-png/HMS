@@ -23,7 +23,7 @@ const DashboardView: React.FC = () => {
             <i className="fa-solid fa-cloud-arrow-down text-emerald-500"></i> Local Backup
           </button>
           <button className="bg-slate-900 text-white px-6 py-3 rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-slate-200">
-            <i className="fa-solid fa-plus mr-2"></i> Quick Entry
+            <i className="fa-solid fa-plus mr-2"></i> Quick Admission
           </button>
         </div>
       </header>

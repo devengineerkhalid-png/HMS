@@ -63,9 +63,12 @@ export const MOCK_VISITORS: VisitorRecord[] = [
 ];
 
 export const MOCK_INVENTORY: InventoryItem[] = [
-  { id: 'i1', name: 'Flour (Atta)', quantity: 150, unit: 'KG' },
-  { id: 'i2', name: 'Cooking Oil', quantity: 45, unit: 'L' },
-  { id: 'i3', name: 'Chicken', quantity: 12, unit: 'KG' }
+  // Fixed missing lastUpdated property
+  { id: 'i1', name: 'Flour (Atta)', quantity: 150, unit: 'KG', lastUpdated: '2024-05-20' },
+  // Fixed missing lastUpdated property
+  { id: 'i2', name: 'Cooking Oil', quantity: 45, unit: 'L', lastUpdated: '2024-05-20' },
+  // Fixed missing lastUpdated property
+  { id: 'i3', name: 'Chicken', quantity: 12, unit: 'KG', lastUpdated: '2024-05-20' }
 ];
 
 export const MOCK_MEAL_PLAN: MealPlan[] = [
