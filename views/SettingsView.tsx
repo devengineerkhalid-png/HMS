@@ -132,7 +132,7 @@ const SettingsView: React.FC = () => {
                       </div>
                       <button onClick={handleWipe} className="p-8 bg-red-900 rounded-[32px] border border-red-950 text-left group hover:bg-black transition-all">
                          <h4 className="font-black text-white">Full Database Wipe</h4>
-                         <p className="text-xs text-red-100/40 mt-1 font-medium">Remove all residents and financials from Turso.</p>
+                         <p className="text-xs text-red-100/40 mt-1 font-medium">Remove all residents and financials from Supabase.</p>
                       </button>
                    </div>
                 </section>
@@ -169,7 +169,7 @@ const SettingsView: React.FC = () => {
              <div className="space-y-4 relative z-10">
                 <div className="p-4 bg-white/5 border border-white/10 rounded-2xl">
                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Database Layer</p>
-                   <p className="text-xl font-black">Turso SQLite</p>
+                   <p className="text-xl font-black">Supabase PostgreSQL</p>
                 </div>
                 <div className="p-4 bg-white/5 border border-white/10 rounded-2xl">
                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Blob Fetch Protocol</p>

@@ -1,25 +1,29 @@
 
-import { createClient, Client } from '@libsql/client';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { put } from '@vercel/blob';
 import { Resident, BillingRecord, Room, Complaint, GatePass, UserRole, UserAccount } from '../types';
 import { MOCK_RESIDENTS, MOCK_BILLING, MOCK_COMPLAINTS } from '../constants';
 
-const TURSO_URL = (process.env as any).TURSO_URL;
-const TURSO_TOKEN = (process.env as any).TURSO_TOKEN;
+const SUPABASE_URL = (process.env as any).SUPABASE_URL;
+const SUPABASE_ANON_KEY = (process.env as any).SUPABASE_ANON_KEY;
 const BLOB_TOKEN = (process.env as any).BLOB_READ_WRITE_TOKEN;
 
-let client: Client | null = null;
+let supabase: SupabaseClient | null = null;
 let isOfflineMode = false;
 
-const isTursoConfigured = () => {
-  return TURSO_URL && TURSO_URL !== "" && TURSO_URL !== "libsql://your-db-name.turso.io";
+const isSupabaseConfigured = () => {
+  return SUPABASE_URL && SUPABASE_URL !== "" && SUPABASE_ANON_KEY && SUPABASE_ANON_KEY !== "";
 };
 
-if (isTursoConfigured()) {
+if (isSupabaseConfigured()) {
   try {
-    client = createClient({ url: TURSO_URL, authToken: TURSO_TOKEN || "" });
-  } catch (e) { isOfflineMode = true; }
-} else { isOfflineMode = true; }
+    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } catch (e) {
+    isOfflineMode = true;
+  }
+} else {
+  isOfflineMode = true;
+}
 
 const LS_KEYS = {
   RESIDENTS: 'pesh_hms_residents',
@@ -53,7 +57,7 @@ export const dataStore = {
   isOffline: () => isOfflineMode,
 
   init: async () => {
-    if (isOfflineMode || !client) {
+    if (isOfflineMode || !supabase) {
       if (!localStorage.getItem(LS_KEYS.USERS)) {
         ls.set(LS_KEYS.USERS, [{ identifier: 'admin', password: 'admin123', role: 'SUPER_ADMIN', name: 'Super Admin', id: 'admin_001' }]);
       }
@@ -61,46 +65,22 @@ export const dataStore = {
     }
 
     try {
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 2000));
-      await Promise.race([client.execute("SELECT 1"), timeoutPromise]);
+      // Test connectivity
+      const { data, error } = await supabase.from('users').select('identifier').limit(1);
+      if (error) throw error;
       
-      await client.batch([
-        `CREATE TABLE IF NOT EXISTS residents (
-          id TEXT PRIMARY KEY, name TEXT, cnic TEXT, phone TEXT, email TEXT,
-          parentName TEXT, parentPhone TEXT, type TEXT, institutionOrOffice TEXT,
-          roomNumber TEXT, status TEXT, admissionDate TEXT, dues REAL,
-          profileImageUrl TEXT, permanentAddress TEXT, currentAddress TEXT,
-          emergencyContactName TEXT, emergencyContactPhone TEXT
-        )`,
-        `CREATE TABLE IF NOT EXISTS rooms (
-          id TEXT PRIMARY KEY, number TEXT, type TEXT, features TEXT,
-          status TEXT, currentOccupancy INTEGER, capacity INTEGER
-        )`,
-        `CREATE TABLE IF NOT EXISTS billing (
-          id TEXT PRIMARY KEY, residentId TEXT, amount REAL, type TEXT,
-          status TEXT, dueDate TEXT, paymentMethod TEXT
-        )`,
-        `CREATE TABLE IF NOT EXISTS complaints (
-          id TEXT PRIMARY KEY, residentId TEXT, title TEXT, category TEXT,
-          status TEXT, createdAt TEXT
-        )`,
-        `CREATE TABLE IF NOT EXISTS gate_passes (
-          id TEXT PRIMARY KEY, residentId TEXT, requestType TEXT, destination TEXT,
-          departureDate TEXT, returnDate TEXT, status TEXT
-        )`,
-        `CREATE TABLE IF NOT EXISTS users (
-          identifier TEXT PRIMARY KEY, password TEXT, role TEXT, name TEXT, id TEXT
-        )`
-      ], "write");
-
-      const userCheck = await client.execute("SELECT COUNT(*) as count FROM users");
-      if (Number(userCheck.rows[0].count) === 0) {
-        await client.execute({
-          sql: "INSERT INTO users (identifier, password, role, name, id) VALUES (?, ?, ?, ?, ?)",
-          args: ['admin', 'admin123', 'SUPER_ADMIN', 'Super Admin', 'admin_001']
+      if (!data || data.length === 0) {
+        // Seed first admin if no users exist
+        await supabase.from('users').insert({
+          identifier: 'admin',
+          password: 'admin123',
+          role: 'SUPER_ADMIN',
+          name: 'Super Admin',
+          id: 'admin_001'
         });
       }
     } catch (e) {
+      console.warn("Supabase connectivity issue. Using Local Storage fallback.");
       isOfflineMode = true;
     }
   },
@@ -115,9 +95,10 @@ export const dataStore = {
   },
 
   getResidents: async (): Promise<Resident[]> => {
-    if (isOfflineMode || !client) return ls.get(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
-    const res = await client.execute("SELECT * FROM residents ORDER BY admissionDate DESC");
-    return res.rows.map(row => ({ ...row, dues: Number(row.dues), profileImage: row.profileImageUrl } as unknown as Resident));
+    if (isOfflineMode || !supabase) return ls.get(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
+    const { data, error } = await supabase.from('residents').select('*').order('admissionDate', { ascending: false });
+    if (error) return ls.get(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
+    return (data || []).map(r => ({ ...r, dues: Number(r.dues), profileImage: r.profileImageUrl }));
   },
 
   addResident: async (res: Resident, login?: { identifier: string, password: string }) => {
@@ -126,50 +107,57 @@ export const dataStore = {
       profileImageUrl = await dataStore.uploadBlob(res.profileImage);
     }
 
-    if (isOfflineMode || !client) {
+    const residentData = {
+      id: res.id,
+      name: res.name,
+      cnic: res.cnic,
+      phone: res.phone,
+      email: res.email || null,
+      parentName: res.parentName,
+      parentPhone: res.parentPhone,
+      type: res.type,
+      institutionOrOffice: res.institutionOrOffice,
+      roomNumber: res.roomNumber,
+      status: res.status,
+      admissionDate: res.admissionDate,
+      dues: res.dues,
+      profileImageUrl: profileImageUrl,
+      permanentAddress: res.permanentAddress || null,
+      currentAddress: res.currentAddress || null,
+      emergencyContactName: res.emergencyContactName || null,
+      emergencyContactPhone: res.emergencyContactPhone || null
+    };
+
+    const userData = {
+      identifier: login?.identifier || res.cnic,
+      password: login?.password || res.phone,
+      role: UserRole.RESIDENT,
+      name: res.name,
+      id: res.id
+    };
+
+    if (isOfflineMode || !supabase) {
       const residents = ls.get<Resident[]>(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
       ls.set(LS_KEYS.RESIDENTS, [{ ...res, profileImage: profileImageUrl }, ...residents]);
       const users = ls.get<any[]>(LS_KEYS.USERS, []);
-      ls.set(LS_KEYS.USERS, [...users, { 
-        identifier: login?.identifier || res.cnic, 
-        password: login?.password || res.phone, 
-        role: UserRole.RESIDENT, 
-        name: res.name, 
-        id: res.id 
-      }]);
+      ls.set(LS_KEYS.USERS, [...users, userData]);
       return;
     }
 
-    await client.batch([
-      {
-        sql: `INSERT INTO residents (id, name, cnic, phone, email, parentName, parentPhone, type, 
-              institutionOrOffice, roomNumber, status, admissionDate, dues, profileImageUrl, 
-              permanentAddress, currentAddress, emergencyContactName, emergencyContactPhone) 
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [
-          res.id, res.name, res.cnic, res.phone, res.email || null, res.parentName, res.parentPhone, res.type,
-          res.institutionOrOffice, res.roomNumber, res.status, res.admissionDate, res.dues, 
-          profileImageUrl, res.permanentAddress || null, res.currentAddress || null, 
-          res.emergencyContactName || null, res.emergencyContactPhone || null
-        ]
-      },
-      {
-        sql: "INSERT INTO users (identifier, password, role, name, id) VALUES (?, ?, ?, ?, ?)",
-        args: [login?.identifier || res.cnic, login?.password || res.phone, UserRole.RESIDENT, res.name, res.id]
-      }
-    ], "write");
+    await supabase.from('residents').insert(residentData);
+    await supabase.from('users').insert(userData);
   },
 
   updateCredentials: async (residentId: string, login: { identifier: string, password: string }) => {
-    if (isOfflineMode || !client) {
+    if (isOfflineMode || !supabase) {
       const users = ls.get<any[]>(LS_KEYS.USERS, []);
       ls.set(LS_KEYS.USERS, users.map(u => u.id === residentId ? { ...u, identifier: login.identifier, password: login.password } : u));
       return;
     }
-    await client.execute({
-      sql: "UPDATE users SET identifier = ?, password = ? WHERE id = ?",
-      args: [login.identifier, login.password, residentId]
-    });
+    await supabase.from('users').update({
+      identifier: login.identifier,
+      password: login.password
+    }).eq('id', residentId);
   },
 
   updateResident: async (id: string, updates: Partial<Resident>) => {
@@ -178,103 +166,82 @@ export const dataStore = {
       profileImageUrl = await dataStore.uploadBlob(updates.profileImage);
     }
 
-    if (isOfflineMode || !client) {
+    const supabaseUpdates: any = { ...updates };
+    delete supabaseUpdates.profileImage;
+    if (profileImageUrl) supabaseUpdates.profileImageUrl = profileImageUrl;
+
+    if (isOfflineMode || !supabase) {
       const data = ls.get<Resident[]>(LS_KEYS.RESIDENTS, MOCK_RESIDENTS);
       ls.set(LS_KEYS.RESIDENTS, data.map(r => r.id === id ? { ...r, ...updates, profileImage: profileImageUrl || r.profileImage } : r));
       return;
     }
 
-    const updateFields = Object.keys(updates).filter(k => k !== 'id' && k !== 'profileImage');
-    const setClauseParts = updateFields.map(k => `${k} = ?`);
-    if (profileImageUrl) setClauseParts.push('profileImageUrl = ?');
-    const setClause = setClauseParts.join(', ');
-    const args = updateFields.map(k => (updates as any)[k]);
-    if (profileImageUrl) args.push(profileImageUrl);
-    args.push(id);
-
-    if (setClause) {
-      await client.execute({ sql: `UPDATE residents SET ${setClause} WHERE id = ?`, args });
-    }
+    await supabase.from('residents').update(supabaseUpdates).eq('id', id);
   },
 
   deleteResident: async (id: string) => {
-    if (isOfflineMode || !client) {
+    if (isOfflineMode || !supabase) {
       ls.set(LS_KEYS.RESIDENTS, ls.get<Resident[]>(LS_KEYS.RESIDENTS, []).filter(r => r.id !== id));
       ls.set(LS_KEYS.USERS, ls.get<any[]>(LS_KEYS.USERS, []).filter(u => u.id !== id));
       return;
     }
-    await client.batch([
-      { sql: "DELETE FROM residents WHERE id = ?", args: [id] },
-      { sql: "DELETE FROM users WHERE id = ?", args: [id] }
-    ], "write");
+    await supabase.from('residents').delete().eq('id', id);
+    await supabase.from('users').delete().eq('id', id);
   },
 
   getRooms: async (): Promise<Room[]> => {
-    if (isOfflineMode || !client) return ls.get(LS_KEYS.ROOMS, []);
-    const res = await client.execute("SELECT * FROM rooms");
-    return res.rows.map(row => ({ ...row, features: JSON.parse(row.features as string), currentOccupancy: Number(row.currentOccupancy), capacity: Number(row.capacity) } as unknown as Room));
+    if (isOfflineMode || !supabase) return ls.get(LS_KEYS.ROOMS, []);
+    const { data, error } = await supabase.from('rooms').select('*');
+    if (error) return ls.get(LS_KEYS.ROOMS, []);
+    return (data || []).map(r => ({ ...r, features: typeof r.features === 'string' ? JSON.parse(r.features) : r.features }));
   },
 
   setRooms: async (rooms: Room[]) => {
-    if (isOfflineMode || !client) { ls.set(LS_KEYS.ROOMS, rooms); return; }
-    await client.execute("DELETE FROM rooms");
-    for (const r of rooms) {
-      await client.execute({
-        sql: "INSERT INTO rooms (id, number, type, features, status, currentOccupancy, capacity) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        args: [r.id, r.number, r.type, JSON.stringify(r.features), r.status, r.currentOccupancy, r.capacity]
-      });
-    }
+    if (isOfflineMode || !supabase) { ls.set(LS_KEYS.ROOMS, rooms); return; }
+    await supabase.from('rooms').delete().neq('id', 'void');
+    await supabase.from('rooms').insert(rooms.map(r => ({ ...r, features: JSON.stringify(r.features) })));
   },
 
   getBilling: async (): Promise<BillingRecord[]> => {
-    if (isOfflineMode || !client) return ls.get(LS_KEYS.BILLING, MOCK_BILLING);
-    const res = await client.execute("SELECT * FROM billing");
-    return res.rows as unknown as BillingRecord[];
+    if (isOfflineMode || !supabase) return ls.get(LS_KEYS.BILLING, MOCK_BILLING);
+    const { data, error } = await supabase.from('billing').select('*');
+    if (error) return ls.get(LS_KEYS.BILLING, MOCK_BILLING);
+    return data || [];
   },
 
   getUsers: async () => {
-    if (isOfflineMode || !client) return ls.get(LS_KEYS.USERS, []);
-    const res = await client.execute("SELECT * FROM users");
-    return res.rows;
+    if (isOfflineMode || !supabase) return ls.get(LS_KEYS.USERS, []);
+    const { data, error } = await supabase.from('users').select('*');
+    if (error) return ls.get(LS_KEYS.USERS, []);
+    return data || [];
   },
 
   addUser: async (user: any) => {
-    if (isOfflineMode || !client) {
+    if (isOfflineMode || !supabase) {
       ls.set(LS_KEYS.USERS, [...ls.get<any[]>(LS_KEYS.USERS, []), user]);
       return;
     }
-    await client.execute({
-      sql: "INSERT INTO users (identifier, password, role, name, id) VALUES (?, ?, ?, ?, ?)",
-      args: [user.identifier, user.password, user.role, user.name, user.id]
-    });
+    await supabase.from('users').insert(user);
   },
 
   getComplaints: async (): Promise<Complaint[]> => {
-    if (isOfflineMode || !client) return ls.get(LS_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
-    const res = await client.execute("SELECT * FROM complaints ORDER BY createdAt DESC");
-    return res.rows as unknown as Complaint[];
+    if (isOfflineMode || !supabase) return ls.get(LS_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const { data, error } = await supabase.from('complaints').select('*').order('createdAt', { ascending: false });
+    if (error) return ls.get(LS_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    return data || [];
   },
 
   getGatePasses: async (): Promise<GatePass[]> => {
-    if (isOfflineMode || !client) return ls.get(LS_KEYS.GATE_PASSES, []);
-    const res = await client.execute("SELECT * FROM gate_passes ORDER BY departureDate DESC");
-    return res.rows as unknown as GatePass[];
+    if (isOfflineMode || !supabase) return ls.get(LS_KEYS.GATE_PASSES, []);
+    const { data, error } = await supabase.from('gate_passes').select('*').order('departureDate', { ascending: false });
+    if (error) return ls.get(LS_KEYS.GATE_PASSES, []);
+    return data || [];
   },
 
   setGatePasses: async (passes: GatePass[]) => {
-    if (isOfflineMode || !client) { ls.set(LS_KEYS.GATE_PASSES, passes); return; }
-    await client.execute("DELETE FROM gate_passes");
-    for (const p of passes) {
-      await client.execute({
-        sql: "INSERT INTO gate_passes (id, residentId, requestType, destination, departureDate, returnDate, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        args: [p.id, p.residentId, p.requestType, p.destination, p.departureDate, p.returnDate, p.status]
-      });
-    }
-  },
-
-  execute: async (stmt: any) => {
-    if (isOfflineMode || !client) return { rows: [] };
-    return await client.execute(stmt);
+    if (isOfflineMode || !supabase) { ls.set(LS_KEYS.GATE_PASSES, passes); return; }
+    await supabase.from('gate_passes').delete().neq('id', 'void');
+    await supabase.from('gate_passes').insert(passes);
   },
 
   exportAllData: async () => {
@@ -290,7 +257,7 @@ export const dataStore = {
 
   importAllData: async (json: string) => {
     const data = JSON.parse(json);
-    if (isOfflineMode || !client) {
+    if (isOfflineMode || !supabase) {
       if (data.residents) ls.set(LS_KEYS.RESIDENTS, data.residents);
       if (data.rooms) ls.set(LS_KEYS.ROOMS, data.rooms);
       if (data.billing) ls.set(LS_KEYS.BILLING, data.billing);
@@ -299,61 +266,43 @@ export const dataStore = {
       if (data.users) ls.set(LS_KEYS.USERS, data.users);
       return;
     }
+    
     await dataStore.wipeAllData();
+    
     if (data.residents) {
-      for (const res of data.residents) {
-        await client.execute({
-          sql: `INSERT INTO residents (id, name, cnic, phone, email, parentName, parentPhone, type, 
-                institutionOrOffice, roomNumber, status, admissionDate, dues, profileImageUrl, 
-                permanentAddress, currentAddress, emergencyContactName, emergencyContactPhone) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [
-            res.id, res.name, res.cnic, res.phone, res.email || null, res.parentName, res.parentPhone, res.type,
-            res.institutionOrOffice, res.roomNumber, res.status, res.admissionDate, res.dues, 
-            res.profileImageUrl || res.profileImage || null, res.permanentAddress || null, res.currentAddress || null, 
-            res.emergencyContactName || null, res.emergencyContactPhone || null
-          ]
-        });
-      }
+      const residents = data.residents.map((r: any) => ({
+        id: r.id, name: r.name, cnic: r.cnic, phone: r.phone, email: r.email,
+        parentName: r.parentName, parentPhone: r.parentPhone, type: r.type,
+        institutionOrOffice: r.institutionOrOffice, roomNumber: r.roomNumber,
+        status: r.status, admissionDate: r.admissionDate, dues: r.dues,
+        profileImageUrl: r.profileImageUrl || r.profileImage,
+        permanentAddress: r.permanentAddress, currentAddress: r.currentAddress,
+        emergencyContactName: r.emergencyContactName, emergencyContactPhone: r.emergencyContactPhone
+      }));
+      await supabase.from('residents').insert(residents);
     }
     if (data.rooms) await dataStore.setRooms(data.rooms);
-    if (data.billing) {
-      for (const b of data.billing) {
-        await client.execute({
-          sql: "INSERT INTO billing (id, residentId, amount, type, status, dueDate, paymentMethod) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          args: [b.id, b.residentId, b.amount, b.type, b.status, b.dueDate, b.paymentMethod || null]
-        });
-      }
-    }
-    if (data.complaints) {
-      for (const c of data.complaints) {
-        await client.execute({
-          sql: "INSERT INTO complaints (id, residentId, title, category, status, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
-          args: [c.id, c.residentId, c.title, c.category, c.status, c.createdAt]
-        });
-      }
-    }
+    if (data.billing) await supabase.from('billing').insert(data.billing);
+    if (data.complaints) await supabase.from('complaints').insert(data.complaints);
     if (data.gate_passes) await dataStore.setGatePasses(data.gate_passes);
     if (data.users) {
-      for (const u of data.users) {
-        if (u.role === 'SUPER_ADMIN') {
-          const check = await client.execute({ sql: "SELECT identifier FROM users WHERE identifier = ?", args: [u.identifier] });
-          if (check.rows.length > 0) continue;
-        }
-        await client.execute({
-          sql: "INSERT INTO users (identifier, password, role, name, id) VALUES (?, ?, ?, ?, ?)",
-          args: [u.identifier, u.password, u.role, u.name, u.id]
-        });
-      }
+      // Filter out existing super admin to avoid conflict
+      const usersToImport = data.users.filter((u: any) => u.identifier !== 'admin');
+      await supabase.from('users').insert(usersToImport);
     }
   },
 
   wipeAllData: async () => {
-    if (isOfflineMode || !client) { Object.values(LS_KEYS).forEach(k => localStorage.removeItem(k)); return; }
-    await client.batch([
-      "DELETE FROM residents", "DELETE FROM rooms", "DELETE FROM billing", 
-      "DELETE FROM users WHERE role != 'SUPER_ADMIN'", "DELETE FROM complaints", "DELETE FROM gate_passes"
-    ], "write");
+    if (isOfflineMode || !supabase) {
+      Object.values(LS_KEYS).forEach(k => localStorage.removeItem(k));
+      return;
+    }
+    await supabase.from('residents').delete().neq('id', 'void');
+    await supabase.from('rooms').delete().neq('id', 'void');
+    await supabase.from('billing').delete().neq('id', 'void');
+    await supabase.from('complaints').delete().neq('id', 'void');
+    await supabase.from('gate_passes').delete().neq('id', 'void');
+    await supabase.from('users').delete().neq('role', 'SUPER_ADMIN');
   },
 
   resetToDefaults: async () => {
