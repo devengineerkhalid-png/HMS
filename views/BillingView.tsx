@@ -14,6 +14,7 @@ const BillingView: React.FC<BillingViewProps> = ({ residentMode, residentId }) =
   const [showModal, setShowModal] = useState<'INVOICE' | 'EXPENSE' | null>(null);
   const [billingData, setBillingData] = useState<BillingRecord[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
+  const [currentResident, setCurrentResident] = useState<Resident | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,28 +25,30 @@ const BillingView: React.FC<BillingViewProps> = ({ residentMode, residentId }) =
         dataStore.getResidents()
       ]);
       
+      setResidents(allResidents);
+      
       if (residentMode && residentId) {
         setBillingData(allBills.filter(b => b.residentId === residentId));
+        const res = allResidents.find(r => r.id === residentId);
+        setCurrentResident(res || null);
       } else {
         setBillingData(allBills);
       }
-      setResidents(allResidents);
       setLoading(false);
     };
     fetchData();
   }, [residentMode, residentId]);
 
-  // Admin Calculations
-  const totalRevenue = billingData.filter(b => b.status === 'PAID').reduce((a, b) => a + b.amount, 0);
-  // Using a hardcoded mock value for expenses since we haven't implemented full expense storage yet, 
-  // but in a real app this would come from dataStore
-  const totalExpense = 56400; 
-  const profit = totalRevenue - totalExpense;
+  // Admin Calculations (matching user request exactly)
+  const totalCollected = billingData.filter(b => b.status === 'PAID').reduce((a, b) => a + b.amount, 0);
+  const totalExpense = 56400; // Fixed per request/mock
+  const netPL = totalCollected - totalExpense;
 
   // Resident Specific Calculations
-  const myPendingDues = billingData.filter(b => b.status === 'UNPAID').reduce((a, b) => a + b.amount, 0);
+  // CRITICAL FIX: The student's primary dues come from the 'dues' field in their profile (assigned by admin)
+  const myPendingDues = currentResident ? currentResident.dues : 0;
   const myTotalPaid = billingData.filter(b => b.status === 'PAID').reduce((a, b) => a + b.amount, 0);
-  const nextDueDate = billingData.find(b => b.status === 'UNPAID')?.dueDate || 'N/A';
+  const nextDueDate = billingData.find(b => b.status === 'UNPAID')?.dueDate || 'Not Set';
 
   if (loading) {
     return (
@@ -61,16 +64,16 @@ const BillingView: React.FC<BillingViewProps> = ({ residentMode, residentId }) =
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-black text-slate-900 tracking-tight">
-            {residentMode ? 'Dues & Fees Portal' : 'Financial Command'}
+            {residentMode ? 'Personal Dues & Fees' : 'Financial Command'}
           </h2>
           <p className="text-sm text-slate-500 font-medium">
-            {residentMode ? 'Manage your invoices and track payment history.' : 'Real-time profit/loss tracking and digital invoicing.'}
+            {residentMode ? 'Transparent record of your hostel financial commitments.' : 'Real-time profit/loss tracking and digital invoicing.'}
           </p>
         </div>
         {!residentMode && (
           <div className="flex gap-3">
              <button onClick={() => setShowModal('EXPENSE')} className="bg-white border-2 border-slate-100 px-6 py-3 rounded-2xl text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50 transition-all">Record Expense</button>
-             <button onClick={() => setShowModal('INVOICE')} className="bg-slate-900 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase hover:bg-slate-800 transition-all shadow-xl">Generate Invoice</button>
+             <button onClick={() => setShowModal('INVOICE')} className="bg-slate-900 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase hover:bg-slate-800 transition-all shadow-xl shadow-slate-200">Generate Invoice</button>
           </div>
         )}
       </div>
@@ -85,9 +88,9 @@ const BillingView: React.FC<BillingViewProps> = ({ residentMode, residentId }) =
           </>
         ) : (
           <>
-            <StatCard title="Total Collected" value={`Rs. ${totalRevenue.toLocaleString()}`} icon="fa-hand-holding-dollar" color="bg-emerald-500" />
-            <StatCard title="Branch Expenses" value={`Rs. ${totalExpense.toLocaleString()}`} icon="fa-money-bill-transfer" color="bg-red-500" />
-            <StatCard title="Net Branch P/L" value={`Rs. ${profit.toLocaleString()}`} icon="fa-chart-line" color={profit >= 0 ? "bg-blue-600" : "bg-amber-600"} />
+            <StatCard title="Total Collected" value={`Rs. ${totalCollected.toLocaleString()}`} icon="fa-hand-holding-dollar" color="bg-emerald-500 shadow-emerald-200" />
+            <StatCard title="Branch Expenses" value={`Rs. ${totalExpense.toLocaleString()}`} icon="fa-money-bill-transfer" color="bg-red-500 shadow-red-200" />
+            <StatCard title="Net Branch P/L" value={`Rs. ${netPL.toLocaleString()}`} icon="fa-chart-line" color={netPL >= 0 ? "bg-blue-600 shadow-blue-200" : "bg-amber-600 shadow-amber-200"} />
           </>
         )}
       </div>
@@ -116,11 +119,11 @@ const BillingView: React.FC<BillingViewProps> = ({ residentMode, residentId }) =
             <table className="w-full text-left">
               <thead className="bg-slate-50/30 text-slate-500 text-[10px] uppercase font-black tracking-widest border-b border-slate-50">
                 <tr>
-                  <th className="px-8 py-5">Invoice ID</th>
+                  <th className="px-8 py-5">Transaction ID</th>
                   {!residentMode && <th className="px-8 py-5">Resident</th>}
                   <th className="px-8 py-5">Amount</th>
                   <th className="px-8 py-5">Status</th>
-                  <th className="px-8 py-5 text-right">Actions</th>
+                  <th className="px-8 py-5 text-right">Receipt</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -147,7 +150,7 @@ const BillingView: React.FC<BillingViewProps> = ({ residentMode, residentId }) =
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={residentMode ? 4 : 5} className="px-8 py-20 text-center text-slate-300 font-black text-xs uppercase tracking-widest">No billing records found.</td>
+                    <td colSpan={residentMode ? 4 : 5} className="px-8 py-20 text-center text-slate-300 font-black text-xs uppercase tracking-widest">No transaction records found.</td>
                   </tr>
                 )}
               </tbody>
@@ -163,7 +166,6 @@ const BillingView: React.FC<BillingViewProps> = ({ residentMode, residentId }) =
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {/* Mocking expenses for UI demonstration since it's not in DB yet */}
                 {[
                   { id: 'e1', title: 'PESCO Electricity Bill', category: 'UTILITIES', amount: 45000, date: '2024-05-15' },
                   { id: 'e2', title: 'Water Tanker (3 Units)', category: 'MAINTENANCE', amount: 6000, date: '2024-05-18' },
@@ -185,27 +187,32 @@ const BillingView: React.FC<BillingViewProps> = ({ residentMode, residentId }) =
       </div>
 
       {residentMode && (
-        <div className="p-8 bg-slate-900 rounded-[40px] text-white shadow-2xl relative overflow-hidden">
-           <div className="absolute top-0 right-0 p-10 opacity-5"><i className="fa-solid fa-credit-card text-9xl"></i></div>
-           <div className="relative z-10">
-              <h3 className="text-xl font-black mb-2">Digital Payment Instructions</h3>
-              <p className="text-xs text-slate-400 font-bold mb-6">Fast and secure settlements via Easypaisa or JazzCash.</p>
+        <div className="p-12 bg-slate-900 rounded-[48px] text-white shadow-2xl relative overflow-hidden">
+           <div className="absolute top-0 right-0 p-10 opacity-5"><i className="fa-solid fa-credit-card text-[200px]"></i></div>
+           <div className="relative z-10 max-w-2xl">
+              <h3 className="text-3xl font-black mb-4 tracking-tighter">Digital Settlement Portal</h3>
+              <p className="text-sm text-slate-400 font-medium mb-10 leading-relaxed">Fast, encrypted, and direct. Settle your dues using Pakistan's trusted digital payment platforms.</p>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <div className="p-5 rounded-3xl bg-white/5 border border-white/10">
-                    <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-2">Method 1: Easypaisa</p>
-                    <p className="text-sm font-bold">A/C: 03451234567</p>
-                    <p className="text-[10px] text-slate-500 mt-1">Title: Frontier Hostel Management</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div className="p-8 rounded-[32px] bg-white/5 border border-white/10 hover:bg-white/10 transition-all cursor-pointer">
+                    <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-slate-900 mb-6 font-black">ep</div>
+                    <p className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] mb-2">Easypaisa Settlement</p>
+                    <p className="text-xl font-black">0345 1234567</p>
+                    <p className="text-[10px] text-slate-500 mt-2 font-bold">A/C Title: Frontier Smart HMS</p>
                  </div>
-                 <div className="p-5 rounded-3xl bg-white/5 border border-white/10">
-                    <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-2">Method 2: JazzCash</p>
-                    <p className="text-sm font-bold">A/C: 03129876543</p>
-                    <p className="text-[10px] text-slate-500 mt-1">Title: Frontier Hostel Management</p>
+                 <div className="p-8 rounded-[32px] bg-white/5 border border-white/10 hover:bg-white/10 transition-all cursor-pointer">
+                    <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center text-slate-900 mb-6 font-black">JC</div>
+                    <p className="text-[10px] font-black text-amber-400 uppercase tracking-[0.2em] mb-2">JazzCash Settlement</p>
+                    <p className="text-xl font-black">0312 9876543</p>
+                    <p className="text-[10px] text-slate-500 mt-2 font-bold">A/C Title: Frontier Smart HMS</p>
                  </div>
               </div>
-              <p className="mt-6 text-[10px] text-slate-500 italic">
-                * Please upload a screenshot of your payment receipt in the 'My Portal' section or present it to the Warden for manual verification.
-              </p>
+              <div className="mt-10 p-6 bg-white/5 rounded-2xl border border-white/5">
+                 <p className="text-[11px] text-slate-400 italic leading-relaxed font-medium">
+                   <i className="fa-solid fa-circle-exclamation mr-2 text-amber-500"></i>
+                   Verify the Account Title (Frontier Smart HMS) before proceeding with the transfer. After payment, take a screenshot and share it with the Warden or upload it to your profile for verification.
+                 </p>
+              </div>
            </div>
         </div>
       )}

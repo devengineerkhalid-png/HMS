@@ -33,7 +33,8 @@ const ResidentPortal: React.FC<{ residentId: string }> = ({ residentId }) => {
     </div>
   );
 
-  const totalDues = myBills.filter(b => b.status === 'UNPAID').reduce((acc, b) => acc + b.amount, 0);
+  // FIXED: Sum total dues from the resident profile property, which is what the admin assigns.
+  const totalDues = resident.dues;
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto pb-20 animate-in fade-in duration-700">
@@ -136,6 +137,11 @@ const ResidentPortal: React.FC<{ residentId: string }> = ({ residentId }) => {
                         </div>
                      </div>
                   ))}
+                  {myBills.length === 0 && resident.dues > 0 && (
+                     <div className="p-12 text-center text-slate-400 italic text-sm">
+                        No specific invoices generated yet. Total profile balance: Rs. {resident.dues.toLocaleString()}
+                     </div>
+                  )}
                </div>
             </div>
          </div>
